@@ -57,7 +57,7 @@ export class Agent {
     };
   }
 
-  async run(userMessage: string): Promise<string> {
+  async run(userMessage: string | ContentBlock[]): Promise<string> {
     this.session.isRunning = true;
     this.session.messages.push({ role: "user", content: userMessage });
 

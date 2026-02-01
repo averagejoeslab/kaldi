@@ -5,6 +5,15 @@ export interface TextContent {
   text: string;
 }
 
+export interface ImageContent {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+    data: string;
+  };
+}
+
 export interface ToolUseContent {
   type: "tool_use";
   id: string;
@@ -19,7 +28,7 @@ export interface ToolResultContent {
   is_error?: boolean;
 }
 
-export type ContentBlock = TextContent | ToolUseContent | ToolResultContent;
+export type ContentBlock = TextContent | ImageContent | ToolUseContent | ToolResultContent;
 
 export interface Message {
   role: "user" | "assistant";

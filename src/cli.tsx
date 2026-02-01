@@ -26,14 +26,15 @@ import {
   type Session,
 } from "./session/index.js";
 import { formatDiff } from "./ui/diff.js";
-import { createReadlineWithAutocomplete } from "./ui/autocomplete.js";
+import { createReadlineWithAutocomplete, COMMANDS } from "./ui/autocomplete.js";
 import {
   status,
   startToolStatus,
   getThinkingMessage,
   formatDuration,
 } from "./ui/status.js";
-import type { ProviderType } from "./providers/types.js";
+import { getClipboardImage, type ClipboardImage } from "./ui/clipboard.js";
+import type { ProviderType, ContentBlock, ImageContent } from "./providers/types.js";
 
 const VERSION = "0.1.0";
 
@@ -61,6 +62,7 @@ const sym = {
 let rl: readline.Interface | null = null;
 let isProcessing = false;
 let turnStartTime = 0;
+let pendingImages: ClipboardImage[] = [];
 
 function getReadline(): readline.Interface {
   if (!rl) {
@@ -73,6 +75,12 @@ function ask(question: string): Promise<string> {
   return new Promise((resolve) => {
     getReadline().question(question, resolve);
   });
+}
+
+function formatImageBadges(count: number): string {
+  if (count === 0) return "";
+  const badges = Array.from({ length: count }, (_, i) => `[Image #${i + 1}]`);
+  return c.dim(badges.join(" ")) + " ";
 }
 
 async function askPermission(request: PermissionRequest): Promise<boolean> {
@@ -113,6 +121,13 @@ function printWelcome() {
   console.log();
 }
 
+function printModeIndicator(compactMode: boolean) {
+  const mode = compactMode
+    ? c.warn("»» auto-approve on") + c.dim(" (/compact to toggle)")
+    : c.dim("»» safe mode") + c.dim(" (/compact for auto-approve)");
+  console.log(`  ${mode}\n`);
+}
+
 function printHelp() {
   const cmds = [
     ["/help", "show help"],
@@ -129,6 +144,11 @@ function printHelp() {
     console.log(`  ${c.accent(cmd.padEnd(12))} ${c.dim(desc)}`);
   }
   console.log(c.dim(`\n  also: /status /diff /init /doctor /sessions /config`));
+  console.log();
+  console.log(c.dim(`  shortcuts:`));
+  console.log(c.dim(`    ctrl+v     paste image from clipboard`));
+  console.log(c.dim(`    ctrl+c     cancel / exit`));
+  console.log(c.dim(`    tab        autocomplete commands`));
   console.log();
 }
 
@@ -156,7 +176,8 @@ async function runSession(resumeSession?: Session) {
   const cwd = process.cwd();
 
   console.log(c.dim(`  ${config.provider} ${sym.dot} ${config.model || "default"}`));
-  console.log(c.dim(`  ${cwd}\n`));
+  console.log(c.dim(`  ${cwd}`));
+  console.log();
 
   const provider = createProvider(config.provider, {
     apiKey: config.apiKey,
@@ -227,6 +248,7 @@ async function runSession(resumeSession?: Session) {
       console.log(c.dim("\n  cancelled\n"));
       agent.stop();
       isProcessing = false;
+      pendingImages = [];
       prompt();
     } else {
       console.log(c.dim("\n  bye 🐕\n"));
@@ -234,12 +256,47 @@ async function runSession(resumeSession?: Session) {
     }
   });
 
-  const prompt = () => {
-    getReadline().question(`${sym.prompt} `, async (input) => {
-      const text = input.trim();
-      if (!text) return prompt();
+  const showPrompt = () => {
+    const imageBadges = formatImageBadges(pendingImages.length);
+    process.stdout.write(`${sym.prompt} ${imageBadges}`);
+  };
 
-      if (text.startsWith("/")) {
+  const setupKeypress = () => {
+    if (process.stdin.isTTY) {
+      readline.emitKeypressEvents(process.stdin, getReadline());
+    }
+
+    const keypressHandler = (_: string, key: readline.Key) => {
+      if (key && key.ctrl && key.name === "v") {
+        // Handle Ctrl+V for image paste
+        const image = getClipboardImage();
+        if (image) {
+          pendingImages.push(image);
+          // Refresh prompt to show image badge
+          const currentLine = (getReadline() as any).line || "";
+          process.stdout.write("\r\x1b[K");
+          showPrompt();
+          process.stdout.write(currentLine);
+        }
+      }
+    };
+
+    process.stdin.on("keypress", keypressHandler);
+    return keypressHandler;
+  };
+
+  const keypressHandler = setupKeypress();
+
+  const prompt = () => {
+    showPrompt();
+    getReadline().question("", async (input) => {
+      const text = input.trim();
+      const images = [...pendingImages];
+      pendingImages = [];
+
+      if (!text && images.length === 0) return prompt();
+
+      if (text.startsWith("/") && images.length === 0) {
         await handleCommand(text, agent, session, {
           compactMode,
           setCompact: (v) => (compactMode = v),
@@ -251,9 +308,29 @@ async function runSession(resumeSession?: Session) {
       turnStartTime = Date.now();
       console.log();
 
+      // Build content blocks with images and text
+      let userContent: string | ContentBlock[] = text;
+      if (images.length > 0) {
+        const blocks: ContentBlock[] = [];
+        for (const img of images) {
+          blocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.mediaType,
+              data: img.data,
+            },
+          } as ImageContent);
+        }
+        if (text) {
+          blocks.push({ type: "text", text });
+        }
+        userContent = blocks;
+      }
+
       try {
         status.start(getThinkingMessage(), false);
-        await agent.run(text);
+        await agent.run(userContent);
         session.messages = agent.getMessages();
         status.clear();
 

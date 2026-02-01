@@ -99,6 +99,7 @@ export class StatusManager {
   private currentMessage: string = "";
   private frameIndex: number = 0;
   private usedog: boolean = false;
+  private isActive: boolean = false;
 
   private colors = {
     dim: chalk.gray,
@@ -111,6 +112,7 @@ export class StatusManager {
     this.currentMessage = message;
     this.frameIndex = 0;
     this.usedog = useDog;
+    this.isActive = true;
     this.render();
 
     this.interval = setInterval(() => {
@@ -121,10 +123,13 @@ export class StatusManager {
 
   update(message: string) {
     this.currentMessage = message;
-    this.render();
+    if (this.isActive) {
+      this.render();
+    }
   }
 
   private render() {
+    if (!this.isActive) return;
     const elapsed = formatDuration(Date.now() - this.startTime);
     const frames = this.usedog ? DOG_FRAMES : SPINNER_FRAMES;
     const frame = frames[this.frameIndex];
@@ -133,22 +138,34 @@ export class StatusManager {
   }
 
   stop(): string {
+    const wasActive = this.isActive;
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
-    process.stdout.write("\r\x1b[K");
+    this.isActive = false;
+
+    // Only clear line if spinner was actually showing
+    if (wasActive) {
+      process.stdout.write("\r\x1b[K");
+    }
 
     const duration = Date.now() - this.startTime;
     return getCompletionMessage(duration);
   }
 
   clear() {
+    const wasActive = this.isActive;
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
-    process.stdout.write("\r\x1b[K");
+    this.isActive = false;
+
+    // Only clear line if spinner was actually showing
+    if (wasActive) {
+      process.stdout.write("\r\x1b[K");
+    }
   }
 }
 

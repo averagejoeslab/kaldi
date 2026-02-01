@@ -152,6 +152,15 @@ export class AnthropicProvider implements Provider {
     const content: Anthropic.ContentBlockParam[] = message.content.map((block) => {
       if (block.type === "text") {
         return { type: "text" as const, text: block.text };
+      } else if (block.type === "image") {
+        return {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: block.source.media_type,
+            data: block.source.data,
+          },
+        };
       } else if (block.type === "tool_use") {
         return {
           type: "tool_use" as const,

@@ -40,6 +40,24 @@ Because coding is better with coffee:
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/averagejoeslab/kaldi/main/install.sh | bash
+```
+
+This will:
+- Clone Kaldi to `~/.kaldi`
+- Install dependencies and build
+- Create a launcher at `~/.local/bin/kaldi`
+
+> **Note:** Make sure `~/.local/bin` is in your PATH. Add this to your shell profile if needed:
+> ```bash
+> export PATH="$HOME/.local/bin:$PATH"
+> ```
+
+### Manual Install
+
 ```bash
 # Clone the repository
 git clone https://github.com/averagejoeslab/kaldi.git

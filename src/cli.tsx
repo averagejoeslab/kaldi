@@ -27,16 +27,21 @@ import {
 } from "./session/index.js";
 import { formatDiff } from "./ui/diff.js";
 import { createReadlineWithAutocomplete } from "./ui/autocomplete.js";
+import {
+  status,
+  startToolStatus,
+  getThinkingMessage,
+  formatDuration,
+} from "./ui/status.js";
 import type { ProviderType } from "./providers/types.js";
-import { PROVIDER_MODELS } from "./providers/index.js";
 
 const VERSION = "0.1.0";
 
-// Minimal, elegant colors
+// Elegant colors
 const c = {
   text: chalk.white,
   dim: chalk.gray,
-  accent: chalk.hex("#D4A574"),  // Warm coffee
+  accent: chalk.hex("#D4A574"),
   success: chalk.hex("#8BC34A"),
   error: chalk.hex("#FF6B6B"),
   warn: chalk.hex("#FFD93D"),
@@ -49,11 +54,13 @@ const sym = {
   check: c.success("✓"),
   cross: c.error("✗"),
   arrow: c.dim("→"),
+  coffee: "☕",
+  dog: "🐕",
 };
 
 let rl: readline.Interface | null = null;
 let isProcessing = false;
-let statusLine = "";
+let turnStartTime = 0;
 
 function getReadline(): readline.Interface {
   if (!rl) {
@@ -68,28 +75,8 @@ function ask(question: string): Promise<string> {
   });
 }
 
-// Update status line (overwrites previous)
-function setStatus(text: string) {
-  if (statusLine) {
-    process.stdout.write("\r\x1b[K"); // Clear line
-  }
-  if (text) {
-    process.stdout.write(c.dim(`  ${text}`));
-    statusLine = text;
-  } else {
-    statusLine = "";
-  }
-}
-
-function clearStatus() {
-  if (statusLine) {
-    process.stdout.write("\r\x1b[K");
-    statusLine = "";
-  }
-}
-
 async function askPermission(request: PermissionRequest): Promise<boolean> {
-  clearStatus();
+  status.clear();
   console.log();
 
   const tool = request.tool;
@@ -122,7 +109,7 @@ async function askPermission(request: PermissionRequest): Promise<boolean> {
 
 function printWelcome() {
   console.log();
-  console.log(`  ${c.accent("☕")} ${c.text("kaldi")}`);
+  console.log(`  ${c.accent(sym.coffee)} ${c.text("kaldi")} ${c.dim("— your loyal coding companion")}`);
   console.log();
 }
 
@@ -183,7 +170,7 @@ async function runSession(resumeSession?: Session) {
   let compactMode = false;
 
   if (resumeSession) {
-    console.log(c.dim(`  resumed ${sym.dot} ${session.metadata.messageCount} messages\n`));
+    console.log(c.dim(`  ${sym.dog} resumed ${sym.dot} ${session.metadata.messageCount} messages\n`));
   }
 
   const agent = new Agent({
@@ -194,25 +181,23 @@ async function runSession(resumeSession?: Session) {
     callbacks: {
       onText: (text) => {
         if (!isProcessing) return;
-        clearStatus();
+        status.clear();
         process.stdout.write(text);
       },
       onToolUse: (name, args) => {
-        const file = (args.path as string)?.split("/").pop() ||
-                     (args.pattern as string) || "";
-        setStatus(`${name} ${file}`);
+        startToolStatus(name, args);
       },
       onToolResult: (name, _, isError) => {
-        clearStatus();
+        const completion = status.stop();
         if (isError) {
           console.log(`  ${sym.cross} ${c.dim(name)}`);
         } else if (!["read_file", "glob", "grep", "list_dir"].includes(name)) {
-          console.log(`  ${sym.check} ${c.dim(name)}`);
+          console.log(`  ${sym.check} ${c.dim(name)} ${c.dim(sym.dot)} ${c.dim(completion)}`);
         }
       },
       onPermissionRequest: async (request) => {
         if (compactMode) {
-          clearStatus();
+          status.clear();
           const info = request.tool === "bash"
             ? (request.args.command as string).slice(0, 50)
             : request.args.path || request.args.url || "";
@@ -225,19 +210,26 @@ async function runSession(resumeSession?: Session) {
         session.totalInputTokens += input;
         session.totalOutputTokens += output;
       },
+      onTurnStart: () => {
+        turnStartTime = Date.now();
+        status.start(getThinkingMessage(), false);
+      },
+      onTurnComplete: () => {
+        status.clear();
+      },
     },
   });
 
   // Ctrl+C handler
   process.on("SIGINT", () => {
     if (isProcessing) {
-      clearStatus();
+      status.clear();
       console.log(c.dim("\n  cancelled\n"));
       agent.stop();
       isProcessing = false;
       prompt();
     } else {
-      console.log(c.dim("\n  bye\n"));
+      console.log(c.dim("\n  bye 🐕\n"));
       process.exit(0);
     }
   });
@@ -256,18 +248,27 @@ async function runSession(resumeSession?: Session) {
       }
 
       isProcessing = true;
+      turnStartTime = Date.now();
       console.log();
 
       try {
+        status.start(getThinkingMessage(), false);
         await agent.run(text);
         session.messages = agent.getMessages();
+        status.clear();
+
+        // Show total time for the turn
+        const totalTime = Date.now() - turnStartTime;
+        if (totalTime > 2000) {
+          console.log(c.dim(`\n  ${sym.coffee} ${formatDuration(totalTime)}`));
+        }
       } catch (e) {
+        status.clear();
         if (isProcessing) {
           console.log(`\n  ${sym.cross} ${c.dim(e instanceof Error ? e.message : String(e))}`);
         }
       }
 
-      clearStatus();
       console.log();
       isProcessing = false;
       prompt();
@@ -286,9 +287,9 @@ async function handleCommand(
   const [cmd, ...args] = input.toLowerCase().split(" ");
 
   const commands: Record<string, () => Promise<void> | void> = {
-    "/quit": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
-    "/exit": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
-    "/q": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
+    "/quit": () => { console.log(c.dim("\n  bye 🐕\n")); process.exit(0); },
+    "/exit": () => { console.log(c.dim("\n  bye 🐕\n")); process.exit(0); },
+    "/q": () => { console.log(c.dim("\n  bye 🐕\n")); process.exit(0); },
 
     "/help": () => printHelp(),
     "/h": () => printHelp(),
@@ -317,7 +318,7 @@ async function handleCommand(
     "/compact": () => {
       state.setCompact(!state.compactMode);
       console.log(state.compactMode
-        ? c.warn("  compact on") + c.dim(" - tools auto-approved\n")
+        ? c.warn("  compact on") + c.dim(" — tools auto-approved\n")
         : c.dim("  compact off\n")
       );
     },
@@ -356,21 +357,42 @@ async function handleCommand(
     "/init": async () => {
       console.log();
       isProcessing = true;
-      try { await agent.run("Describe this project briefly."); } catch {}
+      turnStartTime = Date.now();
+      try {
+        status.start("Sniffing around the project", true);
+        await agent.run("Describe this project briefly.");
+        status.clear();
+        const time = Date.now() - turnStartTime;
+        if (time > 2000) console.log(c.dim(`\n  ${sym.coffee} ${formatDuration(time)}`));
+      } catch {
+        status.clear();
+      }
       isProcessing = false;
       console.log("\n");
     },
 
     "/status": async () => {
       isProcessing = true;
-      try { await agent.run("Run git status, output only."); } catch {}
+      try {
+        status.start("Checking the grounds", false);
+        await agent.run("Run git status, output only.");
+        status.clear();
+      } catch {
+        status.clear();
+      }
       isProcessing = false;
       console.log("\n");
     },
 
     "/diff": async () => {
       isProcessing = true;
-      try { await agent.run("Run git diff, output only."); } catch {}
+      try {
+        status.start("Comparing brews", false);
+        await agent.run("Run git diff, output only.");
+        status.clear();
+      } catch {
+        status.clear();
+      }
       isProcessing = false;
       console.log("\n");
     },
@@ -404,7 +426,7 @@ async function handleCommand(
 // CLI
 const program = new Command()
   .name("kaldi")
-  .description("☕ coding companion")
+  .description("☕ your loyal coding companion")
   .version(VERSION);
 
 program
@@ -463,7 +485,7 @@ program
     }
 
     const target = path || ".";
-    console.log(c.dim(`\n  reviewing ${target}...\n`));
+    console.log(c.dim(`\n  ${sym.coffee} roasting ${target}...\n`));
 
     const config = getConfig();
     const agent = new Agent({
@@ -474,12 +496,14 @@ program
       callbacks: { onText: (t) => process.stdout.write(t) },
     });
 
+    const start = Date.now();
     try {
       await agent.run(`Review "${target}". Focus on bugs and issues. Be concise.`);
+      const time = Date.now() - start;
+      console.log(c.dim(`\n\n  ${sym.coffee} Roasted in ${formatDuration(time)}\n`));
     } catch (e) {
       console.log(c.error(`\n  error: ${e}`));
     }
-    console.log("\n");
   });
 
 program

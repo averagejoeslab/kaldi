@@ -1,22 +1,47 @@
-import type { Provider, Message, ToolCall, StreamChunk } from "../providers/types.js";
-import type { ToolRegistry } from "../tools/types.js";
+import type {
+  Provider,
+  Message,
+  ContentBlock,
+  ToolUseContent,
+  ToolResultContent,
+} from "../providers/types.js";
+import type { ToolRegistry, ToolExecutionResult } from "../tools/types.js";
 import { toolsToProviderFormat, DefaultToolRegistry } from "../tools/index.js";
+
+export interface PermissionRequest {
+  tool: string;
+  args: Record<string, unknown>;
+  description: string;
+}
+
+export interface AgentCallbacks {
+  onText?: (text: string) => void;
+  onToolUse?: (name: string, args: Record<string, unknown>) => void;
+  onToolResult?: (name: string, result: string, isError: boolean) => void;
+  onPermissionRequest?: (request: PermissionRequest) => Promise<boolean>;
+  onTurnStart?: (turn: number) => void;
+  onTurnComplete?: (turn: number) => void;
+  onUsage?: (inputTokens: number, outputTokens: number) => void;
+}
 
 export interface AgentConfig {
   provider: Provider;
   tools: ToolRegistry;
   systemPrompt: string;
   maxTurns?: number;
-  onText?: (text: string) => void;
-  onToolCall?: (name: string, args: Record<string, unknown>) => void;
-  onToolResult?: (name: string, result: string, isError: boolean) => void;
-  onTurnComplete?: () => void;
+  requirePermission?: boolean;
+  callbacks?: AgentCallbacks;
 }
 
 export interface AgentSession {
   messages: Message[];
   isRunning: boolean;
+  totalInputTokens: number;
+  totalOutputTokens: number;
 }
+
+// Tools that are safe to run without permission
+const SAFE_TOOLS = new Set(["read_file", "glob", "grep"]);
 
 export class Agent {
   private config: AgentConfig;
@@ -27,6 +52,8 @@ export class Agent {
     this.session = {
       messages: [],
       isRunning: false,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
     };
   }
 
@@ -41,100 +68,124 @@ export class Agent {
 
     while (turns < maxTurns && this.session.isRunning) {
       turns++;
+      this.config.callbacks?.onTurnStart?.(turns);
 
-      let assistantContent = "";
-      let pendingToolCalls: ToolCall[] = [];
-      let currentToolCall: ToolCall | null = null;
-      let toolArgumentsJson = "";
-
-      // Stream the response
-      for await (const chunk of this.config.provider.stream({
-        messages: this.session.messages,
-        tools,
-        systemPrompt: this.config.systemPrompt,
-      })) {
-        if (chunk.type === "text" && chunk.content) {
-          // Check if we're collecting tool arguments
-          if (currentToolCall) {
-            toolArgumentsJson += chunk.content;
-          } else {
-            assistantContent += chunk.content;
-            this.config.onText?.(chunk.content);
-          }
-        } else if (chunk.type === "tool_call" && chunk.toolCall) {
-          // Start of a new tool call
-          if (currentToolCall && toolArgumentsJson) {
-            // Finalize previous tool call
-            try {
-              currentToolCall.arguments = JSON.parse(toolArgumentsJson);
-            } catch {
-              currentToolCall.arguments = {};
-            }
-            pendingToolCalls.push(currentToolCall);
-          }
-          currentToolCall = chunk.toolCall;
-          toolArgumentsJson = "";
-        } else if (chunk.type === "done") {
-          // Finalize any pending tool call
-          if (currentToolCall) {
-            try {
-              if (toolArgumentsJson) {
-                currentToolCall.arguments = JSON.parse(toolArgumentsJson);
-              }
-            } catch {
-              // Arguments already set or empty
-            }
-            pendingToolCalls.push(currentToolCall);
-          }
-          break;
-        } else if (chunk.type === "error") {
-          throw new Error(chunk.error);
+      // Get completion from provider
+      const response = await this.config.provider.complete(
+        {
+          messages: this.session.messages,
+          tools,
+          systemPrompt: this.config.systemPrompt,
+        },
+        {
+          onText: this.config.callbacks?.onText,
+          onToolUse: (tool) => {
+            this.config.callbacks?.onToolUse?.(tool.name, tool.input);
+          },
         }
+      );
+
+      // Track usage
+      if (response.usage) {
+        this.session.totalInputTokens += response.usage.inputTokens;
+        this.session.totalOutputTokens += response.usage.outputTokens;
+        this.config.callbacks?.onUsage?.(
+          response.usage.inputTokens,
+          response.usage.outputTokens
+        );
       }
 
-      // Add assistant message
-      this.session.messages.push({ role: "assistant", content: assistantContent });
-      finalResponse = assistantContent;
+      // Add assistant response to messages
+      this.session.messages.push({
+        role: "assistant",
+        content: response.content,
+      });
 
-      // If no tool calls, we're done
-      if (pendingToolCalls.length === 0) {
-        this.config.onTurnComplete?.();
+      // Extract text for final response
+      const textBlocks = response.content.filter(
+        (b): b is { type: "text"; text: string } => b.type === "text"
+      );
+      if (textBlocks.length > 0) {
+        finalResponse = textBlocks.map((b) => b.text).join("");
+      }
+
+      // Check if we need to execute tools
+      if (response.stopReason !== "tool_use") {
+        this.config.callbacks?.onTurnComplete?.(turns);
         break;
       }
 
       // Execute tool calls
-      const toolResults: string[] = [];
+      const toolUses = response.content.filter(
+        (b): b is ToolUseContent => b.type === "tool_use"
+      );
 
-      for (const toolCall of pendingToolCalls) {
-        this.config.onToolCall?.(toolCall.name, toolCall.arguments);
+      const toolResults: ToolResultContent[] = [];
 
-        const result = await this.config.tools.execute(
-          toolCall.name,
-          toolCall.arguments
+      for (const toolUse of toolUses) {
+        // Check permission if required
+        if (this.config.requirePermission && !SAFE_TOOLS.has(toolUse.name)) {
+          const description = this.describeToolCall(toolUse.name, toolUse.input);
+          const permitted = await this.config.callbacks?.onPermissionRequest?.({
+            tool: toolUse.name,
+            args: toolUse.input,
+            description,
+          });
+
+          if (!permitted) {
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: "Permission denied by user",
+              is_error: true,
+            });
+            continue;
+          }
+        }
+
+        // Execute the tool
+        const result = await this.config.tools.execute(toolUse.name, toolUse.input);
+
+        this.config.callbacks?.onToolResult?.(
+          toolUse.name,
+          result.output || result.error || "",
+          !result.success
         );
 
-        this.config.onToolResult?.(toolCall.name, result.output, !result.success);
-
-        toolResults.push(
-          `Tool: ${toolCall.name}\n` +
-            (result.success
-              ? `Result:\n${result.output}`
-              : `Error: ${result.error}`)
-        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          content: result.success
+            ? result.output
+            : `Error: ${result.error}`,
+          is_error: !result.success,
+        });
       }
 
-      // Add tool results as user message for next turn
+      // Add tool results to messages
       this.session.messages.push({
         role: "user",
-        content: `Tool results:\n\n${toolResults.join("\n\n")}`,
+        content: toolResults,
       });
 
-      this.config.onTurnComplete?.();
-      pendingToolCalls = [];
+      this.config.callbacks?.onTurnComplete?.(turns);
     }
 
     this.session.isRunning = false;
     return finalResponse;
+  }
+
+  private describeToolCall(name: string, args: Record<string, unknown>): string {
+    switch (name) {
+      case "bash":
+        return `Run command: ${args.command}`;
+      case "write_file":
+        return `Write file: ${args.path}`;
+      case "edit_file":
+        return `Edit file: ${args.path}`;
+      default:
+        return `${name}: ${JSON.stringify(args).slice(0, 100)}`;
+    }
   }
 
   stop(): void {
@@ -145,7 +196,16 @@ export class Agent {
     return [...this.session.messages];
   }
 
+  getUsage(): { inputTokens: number; outputTokens: number } {
+    return {
+      inputTokens: this.session.totalInputTokens,
+      outputTokens: this.session.totalOutputTokens,
+    };
+  }
+
   clearHistory(): void {
     this.session.messages = [];
+    this.session.totalInputTokens = 0;
+    this.session.totalOutputTokens = 0;
   }
 }

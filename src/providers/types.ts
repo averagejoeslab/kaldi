@@ -1,27 +1,35 @@
 // Provider abstraction for BYOK (Bring Your Own Key)
 
-export interface Message {
-  role: "user" | "assistant" | "system";
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+export interface ToolUseContent {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface ToolResultContent {
+  type: "tool_result";
+  tool_use_id: string;
   content: string;
+  is_error?: boolean;
+}
+
+export type ContentBlock = TextContent | ToolUseContent | ToolResultContent;
+
+export interface Message {
+  role: "user" | "assistant";
+  content: string | ContentBlock[];
 }
 
 export interface ToolCall {
   id: string;
   name: string;
-  arguments: Record<string, unknown>;
-}
-
-export interface ToolResult {
-  id: string;
-  result: string;
-  isError?: boolean;
-}
-
-export interface StreamChunk {
-  type: "text" | "tool_call" | "tool_result" | "done" | "error";
-  content?: string;
-  toolCall?: ToolCall;
-  error?: string;
+  input: Record<string, unknown>;
 }
 
 export interface ProviderConfig {
@@ -43,11 +51,25 @@ export interface CompletionRequest {
   maxTokens?: number;
 }
 
+export interface CompletionResponse {
+  content: ContentBlock[];
+  stopReason: "end_turn" | "tool_use" | "max_tokens" | "error";
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+}
+
+export interface StreamCallbacks {
+  onText?: (text: string) => void;
+  onToolUse?: (tool: ToolCall) => void;
+}
+
 export interface Provider {
   name: string;
 
-  // Stream a completion response
-  stream(request: CompletionRequest): AsyncIterable<StreamChunk>;
+  // Complete a message (supports tool use)
+  complete(request: CompletionRequest, callbacks?: StreamCallbacks): Promise<CompletionResponse>;
 
   // List available models for this provider
   listModels(): Promise<string[]>;

@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import ora from "ora";
 import * as readline from "readline";
 import { createProvider } from "./providers/index.js";
 import { createDefaultRegistry } from "./tools/index.js";
 import { Agent, buildSystemPrompt } from "./agent/index.js";
+import type { PermissionRequest } from "./agent/loop.js";
 import {
   getConfig,
   setProvider,
@@ -27,6 +27,41 @@ const coffee = {
   latte: chalk.hex("#C9A66B"),
 };
 
+// Readline interface for permission prompts
+let rl: readline.Interface | null = null;
+
+function getReadline(): readline.Interface {
+  if (!rl) {
+    rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+  }
+  return rl;
+}
+
+function askQuestion(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    getReadline().question(question, resolve);
+  });
+}
+
+async function askPermission(request: PermissionRequest): Promise<boolean> {
+  console.log();
+  console.log(chalk.yellow("⚠ Permission required:"));
+  console.log(chalk.dim(`  Tool: ${request.tool}`));
+  console.log(chalk.white(`  ${request.description}`));
+
+  if (request.tool === "bash") {
+    console.log(chalk.dim(`  Command: ${request.args.command}`));
+  } else if (request.tool === "write_file" || request.tool === "edit_file") {
+    console.log(chalk.dim(`  Path: ${request.args.path}`));
+  }
+
+  const answer = await askQuestion(chalk.yellow("  Allow? [y/N] "));
+  return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
+}
+
 function printBanner() {
   console.log(
     coffee.brown(`
@@ -46,12 +81,13 @@ ${chalk.bold("Commands:")}
   ${chalk.cyan("/help")}      Show this help message
   ${chalk.cyan("/clear")}     Clear conversation history
   ${chalk.cyan("/config")}    Show current configuration
+  ${chalk.cyan("/usage")}     Show token usage
+  ${chalk.cyan("/compact")}   Toggle compact mode (auto-approve tools)
   ${chalk.cyan("/quit")}      Exit Kaldi
 
 ${chalk.bold("Tips:")}
   - Just type your message and press Enter
-  - Kaldi can read, write, and edit files
-  - Kaldi can run bash commands
+  - Kaldi will ask permission before running commands or editing files
   - Use ${chalk.cyan("kaldi beans")} to configure providers
 `);
 }
@@ -63,13 +99,18 @@ async function runInteractiveSession() {
     console.log(
       chalk.yellow("\n⚠ No API key configured. Run 'kaldi beans' to set up a provider.\n")
     );
+    console.log(chalk.dim("Quick setup:"));
+    console.log(chalk.cyan("  kaldi beans -p anthropic -k your-api-key\n"));
+    console.log(chalk.dim("Or set environment variable:"));
+    console.log(chalk.cyan("  export ANTHROPIC_API_KEY=your-api-key\n"));
     return;
   }
 
   const config = getConfig();
   console.log(
-    chalk.dim(`Provider: ${config.provider} | Model: ${config.model || "default"}\n`)
+    chalk.dim(`Provider: ${config.provider} | Model: ${config.model || "default"}`)
   );
+  console.log(chalk.dim(`Working directory: ${process.cwd()}\n`));
 
   const provider = createProvider(config.provider, {
     apiKey: config.apiKey,
@@ -78,31 +119,40 @@ async function runInteractiveSession() {
   });
 
   const tools = createDefaultRegistry();
+
+  let compactMode = false;
+
   const agent = new Agent({
     provider,
     tools,
     systemPrompt: buildSystemPrompt(process.cwd()),
-    onText: (text) => process.stdout.write(text),
-    onToolCall: (name, args) => {
-      console.log(chalk.dim(`\n[${name}]`));
+    requirePermission: true,
+    callbacks: {
+      onText: (text) => process.stdout.write(text),
+      onToolUse: (name, args) => {
+        if (name === "read_file" || name === "glob" || name === "grep") {
+          console.log(chalk.dim(`\n📖 [${name}] ${args.path || args.pattern || ""}`));
+        }
+      },
+      onToolResult: (name, result, isError) => {
+        if (isError) {
+          console.log(chalk.red(`\n✗ ${name} failed`));
+        } else if (name !== "read_file" && name !== "glob" && name !== "grep") {
+          console.log(chalk.green(`\n✓ ${name} completed`));
+        }
+      },
+      onPermissionRequest: async (request) => {
+        if (compactMode) {
+          console.log(chalk.dim(`\n⚡ [${request.tool}] ${request.description}`));
+          return true;
+        }
+        return askPermission(request);
+      },
     },
-    onToolResult: (name, result, isError) => {
-      if (isError) {
-        console.log(chalk.red(`Error: ${result}`));
-      }
-    },
-    onTurnComplete: () => {
-      console.log();
-    },
-  });
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
   });
 
   const prompt = () => {
-    rl.question(coffee.latte("\n☕ > "), async (input) => {
+    getReadline().question(coffee.latte("\n☕ > "), async (input) => {
       const trimmed = input.trim();
 
       if (!trimmed) {
@@ -116,7 +166,7 @@ async function runInteractiveSession() {
 
         if (cmd === "/quit" || cmd === "/exit" || cmd === "/q") {
           console.log(chalk.dim("\nGoodbye! ☕\n"));
-          rl.close();
+          rl?.close();
           process.exit(0);
         }
 
@@ -142,22 +192,38 @@ async function runInteractiveSession() {
           return;
         }
 
-        console.log(chalk.yellow(`Unknown command: ${trimmed}`));
+        if (cmd === "/usage") {
+          const usage = agent.getUsage();
+          console.log(chalk.dim(`\nInput tokens: ${usage.inputTokens.toLocaleString()}`));
+          console.log(chalk.dim(`Output tokens: ${usage.outputTokens.toLocaleString()}`));
+          prompt();
+          return;
+        }
+
+        if (cmd === "/compact") {
+          compactMode = !compactMode;
+          console.log(
+            compactMode
+              ? chalk.yellow("⚡ Compact mode ON - tools will run without asking")
+              : chalk.green("🛡 Compact mode OFF - will ask before running tools")
+          );
+          prompt();
+          return;
+        }
+
+        console.log(chalk.yellow(`Unknown command: ${trimmed}. Type /help for commands.`));
         prompt();
         return;
       }
 
       // Run the agent
-      const spinner = ora({ text: "Thinking...", color: "yellow" }).start();
-
       try {
-        spinner.stop();
         console.log();
         await agent.run(trimmed);
+        console.log();
       } catch (error) {
-        spinner.stop();
         console.log(
-          chalk.red(`\nError: ${error instanceof Error ? error.message : error}`)
+          chalk.red(`\nError: ${error instanceof Error ? error.message : error}\n`)
         );
       }
 
@@ -165,6 +231,7 @@ async function runInteractiveSession() {
     });
   };
 
+  console.log(chalk.dim("Type /help for commands, or just start chatting.\n"));
   prompt();
 }
 

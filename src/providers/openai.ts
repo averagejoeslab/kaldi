@@ -3,8 +3,11 @@ import type {
   Provider,
   ProviderConfig,
   CompletionRequest,
-  StreamChunk,
+  CompletionResponse,
+  StreamCallbacks,
   Tool,
+  ContentBlock,
+  Message,
 } from "./types.js";
 
 export class OpenAIProvider implements Provider {
@@ -20,21 +23,12 @@ export class OpenAIProvider implements Provider {
     this.model = config.model ?? "gpt-4o";
   }
 
-  async *stream(request: CompletionRequest): AsyncIterable<StreamChunk> {
+  async complete(
+    request: CompletionRequest,
+    callbacks?: StreamCallbacks
+  ): Promise<CompletionResponse> {
     const tools = request.tools?.map((tool) => this.convertTool(tool));
-
-    const messages: OpenAI.ChatCompletionMessageParam[] = [];
-
-    if (request.systemPrompt) {
-      messages.push({ role: "system", content: request.systemPrompt });
-    }
-
-    for (const m of request.messages) {
-      messages.push({
-        role: m.role as "user" | "assistant" | "system",
-        content: m.content,
-      });
-    }
+    const messages = this.convertMessages(request.messages, request.systemPrompt);
 
     const stream = await this.client.chat.completions.create({
       model: this.model,
@@ -44,54 +38,85 @@ export class OpenAIProvider implements Provider {
       stream: true,
     });
 
-    let currentToolCall: { id: string; name: string; arguments: string } | null =
-      null;
+    const contentBlocks: ContentBlock[] = [];
+    let textContent = "";
+    const toolCalls: Map<
+      number,
+      { id: string; name: string; arguments: string }
+    > = new Map();
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
 
       if (delta?.content) {
-        yield { type: "text", content: delta.content };
+        textContent += delta.content;
+        callbacks?.onText?.(delta.content);
       }
 
       if (delta?.tool_calls) {
-        for (const toolCall of delta.tool_calls) {
-          if (toolCall.function?.name) {
-            currentToolCall = {
-              id: toolCall.id ?? `tool_${Date.now()}`,
-              name: toolCall.function.name,
-              arguments: toolCall.function.arguments ?? "",
-            };
-          } else if (toolCall.function?.arguments && currentToolCall) {
-            currentToolCall.arguments += toolCall.function.arguments;
+        for (const tc of delta.tool_calls) {
+          const existing = toolCalls.get(tc.index);
+          if (existing) {
+            if (tc.function?.arguments) {
+              existing.arguments += tc.function.arguments;
+            }
+          } else {
+            toolCalls.set(tc.index, {
+              id: tc.id ?? `tool_${Date.now()}_${tc.index}`,
+              name: tc.function?.name ?? "",
+              arguments: tc.function?.arguments ?? "",
+            });
           }
         }
       }
-
-      if (chunk.choices[0]?.finish_reason === "tool_calls" && currentToolCall) {
-        yield {
-          type: "tool_call",
-          toolCall: {
-            id: currentToolCall.id,
-            name: currentToolCall.name,
-            arguments: JSON.parse(currentToolCall.arguments),
-          },
-        };
-        currentToolCall = null;
-      }
-
-      if (chunk.choices[0]?.finish_reason === "stop") {
-        yield { type: "done" };
-      }
     }
+
+    // Add text content if present
+    if (textContent) {
+      contentBlocks.push({ type: "text", text: textContent });
+    }
+
+    // Add tool calls
+    for (const tc of toolCalls.values()) {
+      let input: Record<string, unknown> = {};
+      try {
+        input = tc.arguments ? JSON.parse(tc.arguments) : {};
+      } catch {
+        // Invalid JSON, use empty object
+      }
+
+      contentBlocks.push({
+        type: "tool_use",
+        id: tc.id,
+        name: tc.name,
+        input,
+      });
+
+      callbacks?.onToolUse?.({
+        id: tc.id,
+        name: tc.name,
+        input,
+      });
+    }
+
+    const stopReason = toolCalls.size > 0 ? "tool_use" : "end_turn";
+
+    return {
+      content: contentBlocks,
+      stopReason,
+    };
   }
 
   async listModels(): Promise<string[]> {
-    const models = await this.client.models.list();
-    return models.data
-      .filter((m) => m.id.includes("gpt"))
-      .map((m) => m.id)
-      .sort();
+    try {
+      const models = await this.client.models.list();
+      return models.data
+        .filter((m) => m.id.includes("gpt") || m.id.includes("o1"))
+        .map((m) => m.id)
+        .sort();
+    } catch {
+      return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+    }
   }
 
   async validateKey(): Promise<boolean> {
@@ -116,5 +141,75 @@ export class OpenAIProvider implements Provider {
         },
       },
     };
+  }
+
+  private convertMessages(
+    messages: Message[],
+    systemPrompt?: string
+  ): OpenAI.ChatCompletionMessageParam[] {
+    const result: OpenAI.ChatCompletionMessageParam[] = [];
+
+    if (systemPrompt) {
+      result.push({ role: "system", content: systemPrompt });
+    }
+
+    for (const msg of messages) {
+      if (typeof msg.content === "string") {
+        result.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      } else {
+        // Handle content blocks
+        if (msg.role === "assistant") {
+          const textParts = msg.content
+            .filter((b) => b.type === "text")
+            .map((b) => (b as { type: "text"; text: string }).text)
+            .join("");
+
+          const toolCalls = msg.content
+            .filter((b) => b.type === "tool_use")
+            .map((b) => {
+              const tu = b as { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+              return {
+                id: tu.id,
+                type: "function" as const,
+                function: {
+                  name: tu.name,
+                  arguments: JSON.stringify(tu.input),
+                },
+              };
+            });
+
+          result.push({
+            role: "assistant",
+            content: textParts || null,
+            tool_calls: toolCalls.length ? toolCalls : undefined,
+          });
+        } else if (msg.role === "user") {
+          // Tool results go in separate tool messages
+          const toolResults = msg.content.filter((b) => b.type === "tool_result");
+          const textParts = msg.content.filter((b) => b.type === "text");
+
+          for (const tr of toolResults) {
+            const toolResult = tr as { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
+            result.push({
+              role: "tool",
+              tool_call_id: toolResult.tool_use_id,
+              content: toolResult.content,
+            });
+          }
+
+          if (textParts.length > 0) {
+            result.push({
+              role: "user",
+              content: textParts.map((b) => (b as { type: "text"; text: string }).text).join(""),
+            });
+          }
+        }
+      }
+    }
+
+    return result;
   }
 }

@@ -2,6 +2,8 @@ import { DefaultToolRegistry } from "./registry.js";
 import { readFileTool, writeFileTool, editFileTool } from "./file.js";
 import { bashTool } from "./bash.js";
 import { globTool, grepTool } from "./search.js";
+import { listDirTool } from "./list-dir.js";
+import { webFetchTool } from "./web.js";
 
 export * from "./types.js";
 export * from "./registry.js";
@@ -14,12 +16,18 @@ export function createDefaultRegistry(): DefaultToolRegistry {
   registry.register(writeFileTool);
   registry.register(editFileTool);
 
+  // Directory
+  registry.register(listDirTool);
+
   // Shell
   registry.register(bashTool);
 
   // Search
   registry.register(globTool);
   registry.register(grepTool);
+
+  // Web
+  registry.register(webFetchTool);
 
   return registry;
 }

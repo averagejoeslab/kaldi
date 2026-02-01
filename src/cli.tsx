@@ -3,6 +3,9 @@
  *
  * Named after Kaldi, the Ethiopian goatherd who discovered coffee
  * when he noticed his goats dancing after eating coffee berries.
+ *
+ * Theme inspired by Great Pyrenees (creamy whites, warm fur)
+ * combined with coffee (rich browns, honey, espresso)
  */
 
 import { Command } from "commander";
@@ -49,36 +52,49 @@ const VERSION = "0.2.0";
 const KALDI_DIR = join(homedir(), ".kaldi");
 
 // ============================================================================
-// THEME SYSTEM
+// PYRENEES + COFFEE THEME
 // ============================================================================
 
 type ChalkFn = (text: string) => string;
 
 interface ThemeColors {
+  // Core
   primary: ChalkFn;
   secondary: ChalkFn;
   accent: ChalkFn;
+  // Text
   text: ChalkFn;
   dim: ChalkFn;
   muted: ChalkFn;
+  // Status
   success: ChalkFn;
   warning: ChalkFn;
   error: ChalkFn;
   info: ChalkFn;
+  // Special
+  highlight: ChalkFn;
+  inputBg: ChalkFn;
 }
 
+// Great Pyrenees + Coffee inspired palette
 const themes: Record<string, ThemeColors> = {
   default: {
-    primary: chalk.hex("#D4A574"),    // Warm coffee brown
-    secondary: chalk.hex("#8B6914"),   // Dark roast
-    accent: chalk.hex("#C4956A"),      // Latte foam
-    text: chalk.hex("#E8DCC4"),        // Cream
-    dim: chalk.hex("#9C8E7C"),         // Aged paper
-    muted: chalk.hex("#6B5F52"),       // Coffee grounds
-    success: chalk.hex("#7CB342"),     // Fresh leaves
-    warning: chalk.hex("#FFB300"),     // Golden honey
-    error: chalk.hex("#E57373"),       // Dried cherry
-    info: chalk.hex("#64B5F6"),        // Morning sky
+    // Pyrenees-inspired creamy tones
+    primary: chalk.hex("#C9A66B"),     // Latte - warm golden brown
+    secondary: chalk.hex("#8B7355"),   // Taupe - like Pyrenees markings
+    accent: chalk.hex("#DAA520"),      // Golden honey
+
+    text: chalk.hex("#F5F0E6"),        // Cream - like Pyrenees fur
+    dim: chalk.hex("#A09080"),         // Muted brown-gray
+    muted: chalk.hex("#6B5B4F"),       // Dark taupe
+
+    success: chalk.hex("#7CB342"),     // Olive green (natural)
+    warning: chalk.hex("#DAA520"),     // Golden honey
+    error: chalk.hex("#CD5C5C"),       // Indian red (warm)
+    info: chalk.hex("#87CEEB"),        // Sky blue
+
+    highlight: chalk.hex("#F5F0E6"),   // Cream highlight
+    inputBg: chalk.bgHex("#3D3225").hex("#F5F0E6"), // Warm dark bg for input
   },
   dark: {
     primary: chalk.hex("#BB86FC"),
@@ -91,18 +107,22 @@ const themes: Record<string, ThemeColors> = {
     warning: chalk.hex("#FF9800"),
     error: chalk.hex("#F44336"),
     info: chalk.hex("#2196F3"),
+    highlight: chalk.white,
+    inputBg: chalk.bgHex("#1E1E1E").white,
   },
   light: {
-    primary: chalk.hex("#6D4C41"),
-    secondary: chalk.hex("#795548"),
-    accent: chalk.hex("#8D6E63"),
-    text: chalk.hex("#3E2723"),
-    dim: chalk.hex("#8D6E63"),
-    muted: chalk.hex("#A1887F"),
+    primary: chalk.hex("#6F4E37"),     // Coffee brown
+    secondary: chalk.hex("#8B7355"),
+    accent: chalk.hex("#D2691E"),      // Chocolate
+    text: chalk.hex("#3C2415"),        // Espresso
+    dim: chalk.hex("#8B7355"),
+    muted: chalk.hex("#A09080"),
     success: chalk.hex("#388E3C"),
     warning: chalk.hex("#F57C00"),
     error: chalk.hex("#D32F2F"),
     info: chalk.hex("#1976D2"),
+    highlight: chalk.hex("#3C2415"),
+    inputBg: chalk.bgHex("#E8E0D5").hex("#3C2415"),
   },
 };
 
@@ -117,18 +137,33 @@ function setTheme(name: string) {
 }
 
 // ============================================================================
-// SYMBOLS & FORMATTING
+// SYMBOLS
 // ============================================================================
 
 const sym = {
+  // Prompts
   prompt: () => c.primary("❯"),
   promptPlan: () => c.info("◆"),
   promptVim: () => c.warning("▸"),
+  selector: () => c.primary("❯"),
+
+  // Tree structure (for tool hierarchy)
+  branch: () => c.dim("├"),
+  branchLast: () => c.dim("└"),
+  pipe: () => c.dim("│"),
+
+  // Status
+  bullet: () => c.primary("●"),
+  star: () => c.accent("✦"),
   dot: () => c.dim("·"),
+
+  // Results
   check: () => c.success("✓"),
   cross: () => c.error("✗"),
   arrow: () => c.dim("→"),
   arrowRight: () => c.primary("»"),
+
+  // Themed emojis
   coffee: "☕",
   dog: "🐕",
   bone: "🦴",
@@ -172,6 +207,35 @@ const state: AppState = {
 // READLINE SETUP
 // ============================================================================
 
+// Command descriptions for autocomplete dropdown
+const commandDescriptions: Record<string, string> = {
+  "/help": "Show help and available commands",
+  "/clear": "Clear conversation history",
+  "/exit": "Exit kaldi",
+  "/quit": "Exit kaldi",
+  "/save": "Save current session",
+  "/load": "Load/resume a session",
+  "/sessions": "List saved sessions",
+  "/compact": "Toggle auto-approve mode",
+  "/plan": "Toggle read-only plan mode",
+  "/vim": "Toggle vim keybindings",
+  "/theme": "Change the color theme",
+  "/usage": "Show token usage and cost",
+  "/cost": "Show token usage and cost",
+  "/context": "Visualize context window",
+  "/config": "Show configuration",
+  "/doctor": "Check system health",
+  "/version": "Show version info",
+  "/status": "Git status",
+  "/diff": "Git diff",
+  "/commit": "Create git commit",
+  "/copy": "Copy last response to clipboard",
+  "/init": "Describe this project",
+  "/model": "Show/change model",
+  "/coffee": "Get a fresh cup of coffee",
+  "/goodboy": "Pet Kaldi",
+};
+
 function getReadline(): readline.Interface {
   if (!state.rl) {
     state.rl = readline.createInterface({
@@ -179,9 +243,24 @@ function getReadline(): readline.Interface {
       output: process.stdout,
       completer: (line: string): [string[], string] => {
         if (line.startsWith("/")) {
-          const commands = Object.keys(allCommands);
+          const commands = Object.keys(allCommands).filter(c => !c.startsWith("/?"));
           const matches = commands.filter(cmd => cmd.startsWith(line.toLowerCase()));
-          return [matches.length ? matches : commands, line];
+
+          // Show descriptions for matches (Claude Code style)
+          if (matches.length > 0 && matches.length <= 10) {
+            console.log(); // New line before dropdown
+            console.log(thinDivider());
+            console.log();
+            matches.slice(0, 6).forEach((cmd, i) => {
+              const desc = commandDescriptions[cmd] || "";
+              const isFirst = i === 0;
+              const cmdText = isFirst ? c.info(cmd.padEnd(20)) : c.primary(cmd.padEnd(20));
+              const descText = isFirst ? c.info(desc) : c.dim(desc);
+              console.log(`  ${cmdText} ${descText}`);
+            });
+          }
+
+          return [matches.length ? matches : [], line];
         }
         return [[], line];
       },
@@ -204,6 +283,44 @@ function formatImageBadges(count: number): string {
   if (count === 0) return "";
   const badges = Array.from({ length: count }, (_, i) => c.info(`[Image #${i + 1}]`));
   return badges.join(" ") + " ";
+}
+
+// Format user input with background highlight (like Claude Code)
+function formatUserInput(text: string): string {
+  return c.inputBg(` ${text} `);
+}
+
+// Horizontal divider
+function divider(): string {
+  const width = Math.min(process.stdout.columns || 80, 80);
+  return c.muted("─".repeat(width));
+}
+
+function thinDivider(): string {
+  const width = Math.min(process.stdout.columns || 80, 80);
+  return c.dim("─".repeat(width));
+}
+
+// Format tool arguments for display
+function formatToolArgs(name: string, args: Record<string, unknown>): string {
+  switch (name) {
+    case "read_file":
+    case "write_file":
+    case "edit_file":
+      const path = args.path as string;
+      return path ? path.split("/").slice(-2).join("/") : "";
+    case "bash":
+      const cmd = args.command as string;
+      return cmd ? (cmd.length > 40 ? cmd.slice(0, 37) + "..." : cmd) : "";
+    case "glob":
+    case "grep":
+      return args.pattern as string || "";
+    case "web_fetch":
+      const url = args.url as string;
+      return url ? new URL(url).hostname : "";
+    default:
+      return "";
+  }
 }
 
 function formatTokens(n: number): string {
@@ -250,13 +367,27 @@ function printSessionInfo(config: { provider: string; model?: string }, cwd: str
 }
 
 function printModeBar() {
-  const modeText = state.compactMode
-    ? c.warning(`${sym.arrowRight()}${sym.arrowRight()} auto-approve on`)
-    : c.dim(`${sym.arrowRight()}${sym.arrowRight()} safe mode`);
+  let modeText: string;
+  let hint: string;
 
-  const toggleHint = c.muted(" (shift+tab to cycle)");
-  console.log(`  ${modeText}${toggleHint}`);
+  if (state.planMode) {
+    modeText = c.info(`${sym.arrowRight()}${sym.arrowRight()} plan mode`);
+    hint = "read-only exploration";
+  } else if (state.compactMode) {
+    modeText = c.warning(`${sym.arrowRight()}${sym.arrowRight()} auto-approve on`);
+    hint = "tools run without confirmation";
+  } else {
+    modeText = c.dim(`${sym.arrowRight()}${sym.arrowRight()} safe mode`);
+    hint = "tools require confirmation";
+  }
+
+  console.log(`  ${modeText} ${c.muted(`— ${hint}`)}`);
+  console.log(c.dim("  (shift+tab to cycle)"));
   console.log();
+}
+
+function printFooterHints() {
+  console.log(c.dim("  ? for shortcuts · esc to interrupt"));
 }
 
 function printHelp() {
@@ -388,16 +519,28 @@ function printContextVisualization(used: number, total: number) {
 async function askPermission(request: PermissionRequest): Promise<boolean> {
   status.clear();
   console.log();
+  console.log(thinDivider());
+  console.log();
 
   const tool = request.tool;
+  let title = "Tool";
+  let command = "";
+  let description = "";
 
   if (tool === "bash") {
-    const cmd = request.args.command as string;
-    const display = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
-    console.log(c.dim(`  $ ${display}`));
+    title = "Bash command";
+    command = request.args.command as string;
+    description = "Run shell command";
   } else if (tool === "write_file") {
-    console.log(c.dim(`  write ${sym.arrow()} ${request.args.path}`));
+    title = "Write file";
+    command = request.args.path as string;
+    description = "Create or overwrite file";
   } else if (tool === "edit_file") {
+    title = "Edit file";
+    command = request.args.path as string;
+    description = "Modify file contents";
+
+    // Show diff preview
     const path = request.args.path as string;
     try {
       const content = await readFile(path, "utf-8");
@@ -406,15 +549,40 @@ async function askPermission(request: PermissionRequest): Promise<boolean> {
         request.args.new_string as string
       );
       console.log(formatDiff({ oldContent: content, newContent, filePath: path, context: 2 }));
+      console.log();
     } catch {
-      console.log(c.dim(`  edit ${sym.arrow()} ${path}`));
+      // File doesn't exist yet
     }
   } else if (tool === "web_fetch") {
-    console.log(c.dim(`  fetch ${sym.arrow()} ${request.args.url}`));
+    title = "Web fetch";
+    command = request.args.url as string;
+    description = "Fetch content from URL";
   }
 
-  const answer = await ask(c.dim("  allow? ") + c.warning("[y/n] "));
-  return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
+  // Title (like Claude Code's blue header)
+  console.log(c.info(title));
+  console.log();
+
+  // Command display
+  const displayCmd = command.length > 70 ? command.slice(0, 67) + "..." : command;
+  console.log(`  ${c.text(displayCmd)}`);
+  console.log(`  ${c.dim(description)}`);
+  console.log();
+
+  // Question with numbered options
+  console.log(c.text("Do you want to proceed?"));
+  console.log(`${sym.selector()} 1. ${c.info("Yes")}`);
+  console.log(`  2. ${c.text("Yes, and don't ask again for this session")}`);
+  console.log(`  3. ${c.text("No")}`);
+  console.log();
+
+  // Footer hints
+  console.log(c.dim("Esc to cancel · Tab to amend · ctrl+e to explain"));
+
+  const answer = await ask(c.dim("\n  choice: "));
+  const choice = answer.trim().toLowerCase();
+
+  return choice === "1" || choice === "y" || choice === "yes" || choice === "2";
 }
 
 // ============================================================================
@@ -783,15 +951,24 @@ async function runSession(resumeSession?: Session) {
       },
       onToolUse: (name, args) => {
         if (!state.planMode) {
+          // Show tool in hierarchical format like Claude Code
+          const argStr = formatToolArgs(name, args);
+          console.log(`\n  ${sym.bullet()} ${c.text(name)}${argStr ? c.dim(`(${argStr})`) : ""}`);
           startToolStatus(name, args);
         }
       },
-      onToolResult: (name, _, isError) => {
+      onToolResult: (name, result, isError) => {
         const completion = status.stop();
         if (isError) {
-          console.log(`  ${sym.cross()} ${c.dim(name)}`);
-        } else if (!["read_file", "glob", "grep", "list_dir"].includes(name)) {
-          console.log(`  ${sym.check()} ${c.dim(name)} ${c.dim(sym.dot())} ${c.dim(completion)}`);
+          console.log(`  ${sym.branchLast()} ${sym.cross()} ${c.error("failed")} ${c.dim(completion)}`);
+        } else {
+          // Show brief result for read operations
+          if (["read_file", "glob", "grep", "list_dir"].includes(name) && result) {
+            const preview = result.slice(0, 50).replace(/\n/g, " ");
+            console.log(`  ${sym.branchLast()} ${c.dim(preview)}${result.length > 50 ? "..." : ""}`);
+          } else {
+            console.log(`  ${sym.branchLast()} ${sym.check()} ${c.dim(completion)}`);
+          }
         }
       },
       onPermissionRequest: async (request) => {
@@ -818,7 +995,9 @@ async function runSession(resumeSession?: Session) {
       onTurnStart: () => {
         state.turnStartTime = Date.now();
         state.lastResponse = "";
-        status.start(getThinkingMessage(), false);
+        // Show thinking status with star like Claude Code
+        const verb = getThinkingMessage();
+        status.start(verb, false);
       },
       onTurnComplete: () => {
         status.clear();

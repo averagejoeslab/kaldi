@@ -89,9 +89,21 @@ export function formatDuration(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
-// Spinner frames - coffee cup animation
+// Pyrenees + Coffee themed colors
+const colors = {
+  dim: chalk.hex("#A09080"),           // Muted brown-gray
+  accent: chalk.hex("#DAA520"),        // Golden honey
+  warning: chalk.hex("#DAA520"),       // Golden honey (for thinking)
+  primary: chalk.hex("#C9A66B"),       // Latte
+  text: chalk.hex("#F5F0E6"),          // Cream
+};
+
+// Spinner frames - coffee cup and dog animation
 const SPINNER_FRAMES = ["☕", "🫖", "☕", "🫖"];
 const DOG_FRAMES = ["🐕", "🐕‍🦺", "🦮", "🐕"];
+
+// Star symbol for thinking (like Claude Code)
+const STAR = "✦";
 
 export class StatusManager {
   private interval: NodeJS.Timeout | null = null;
@@ -100,19 +112,16 @@ export class StatusManager {
   private frameIndex: number = 0;
   private usedog: boolean = false;
   private isActive: boolean = false;
+  private isThinking: boolean = false;
 
-  private colors = {
-    dim: chalk.gray,
-    accent: chalk.hex("#D4A574"),
-  };
-
-  start(message: string, useDog: boolean = false) {
+  start(message: string, useDog: boolean = false, thinking: boolean = true) {
     this.stop();
     this.startTime = Date.now();
     this.currentMessage = message;
     this.frameIndex = 0;
     this.usedog = useDog;
     this.isActive = true;
+    this.isThinking = thinking;
     this.render();
 
     this.interval = setInterval(() => {
@@ -131,9 +140,18 @@ export class StatusManager {
   private render() {
     if (!this.isActive) return;
     const elapsed = formatDuration(Date.now() - this.startTime);
-    const frames = this.usedog ? DOG_FRAMES : SPINNER_FRAMES;
-    const frame = frames[this.frameIndex];
-    const line = this.colors.dim(`  ${frame} ${this.currentMessage} · ${elapsed}`);
+
+    let line: string;
+    if (this.isThinking) {
+      // Claude Code style: ✦ Wandering... (thought for 1s)
+      line = `${colors.accent(STAR)} ${colors.warning(`${this.currentMessage}...`)} ${colors.dim(`(thought for ${elapsed})`)}`;
+    } else {
+      // Tool operation style with emoji
+      const frames = this.usedog ? DOG_FRAMES : SPINNER_FRAMES;
+      const frame = frames[this.frameIndex];
+      line = colors.dim(`  ${frame} ${this.currentMessage} · ${elapsed}`);
+    }
+
     process.stdout.write(`\r\x1b[K${line}`);
   }
 

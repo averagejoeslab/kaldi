@@ -25,27 +25,35 @@ import {
   getSessionsDir,
   type Session,
 } from "./session/index.js";
-import { formatDiff, getChangeStats, formatChangeStats } from "./ui/diff.js";
-import { createReadlineWithAutocomplete, COMMANDS } from "./ui/autocomplete.js";
+import { formatDiff } from "./ui/diff.js";
+import { createReadlineWithAutocomplete } from "./ui/autocomplete.js";
 import type { ProviderType } from "./providers/types.js";
 import { PROVIDER_MODELS } from "./providers/index.js";
 
 const VERSION = "0.1.0";
 
-// Clean, minimal colors
-const colors = {
-  primary: chalk.hex("#C9A66B"),    // Warm latte
-  dim: chalk.dim,
-  success: chalk.green,
-  error: chalk.red,
-  warn: chalk.yellow,
-  info: chalk.cyan,
+// Minimal, elegant colors
+const c = {
+  text: chalk.white,
+  dim: chalk.gray,
+  accent: chalk.hex("#D4A574"),  // Warm coffee
+  success: chalk.hex("#8BC34A"),
+  error: chalk.hex("#FF6B6B"),
+  warn: chalk.hex("#FFD93D"),
 };
 
-// Readline interface
+// Symbols
+const sym = {
+  prompt: c.accent("❯"),
+  dot: c.dim("·"),
+  check: c.success("✓"),
+  cross: c.error("✗"),
+  arrow: c.dim("→"),
+};
+
 let rl: readline.Interface | null = null;
 let isProcessing = false;
-let currentAgent: Agent | null = null;
+let statusLine = "";
 
 function getReadline(): readline.Interface {
   if (!rl) {
@@ -54,72 +62,87 @@ function getReadline(): readline.Interface {
   return rl;
 }
 
-function askQuestion(question: string): Promise<string> {
+function ask(question: string): Promise<string> {
   return new Promise((resolve) => {
     getReadline().question(question, resolve);
   });
 }
 
+// Update status line (overwrites previous)
+function setStatus(text: string) {
+  if (statusLine) {
+    process.stdout.write("\r\x1b[K"); // Clear line
+  }
+  if (text) {
+    process.stdout.write(c.dim(`  ${text}`));
+    statusLine = text;
+  } else {
+    statusLine = "";
+  }
+}
+
+function clearStatus() {
+  if (statusLine) {
+    process.stdout.write("\r\x1b[K");
+    statusLine = "";
+  }
+}
+
 async function askPermission(request: PermissionRequest): Promise<boolean> {
+  clearStatus();
   console.log();
 
-  if (request.tool === "bash") {
-    const cmd = request.args.command as string;
-    console.log(colors.dim(`  $ ${cmd.length > 100 ? cmd.slice(0, 100) + "..." : cmd}`));
-  } else if (request.tool === "write_file") {
-    console.log(colors.dim(`  Write: ${request.args.path}`));
-  } else if (request.tool === "edit_file") {
-    const path = request.args.path as string;
-    const oldString = request.args.old_string as string;
-    const newString = request.args.new_string as string;
+  const tool = request.tool;
 
+  if (tool === "bash") {
+    const cmd = request.args.command as string;
+    const display = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
+    console.log(c.dim(`  $ ${display}`));
+  } else if (tool === "write_file") {
+    console.log(c.dim(`  write ${sym.arrow} ${request.args.path}`));
+  } else if (tool === "edit_file") {
+    const path = request.args.path as string;
     try {
       const content = await readFile(path, "utf-8");
-      const newContent = content.replace(oldString, newString);
-      const diff = formatDiff({
-        oldContent: content,
-        newContent,
-        filePath: path,
-        context: 2,
-      });
-      console.log(diff);
+      const newContent = content.replace(
+        request.args.old_string as string,
+        request.args.new_string as string
+      );
+      console.log(formatDiff({ oldContent: content, newContent, filePath: path, context: 2 }));
     } catch {
-      console.log(colors.dim(`  Edit: ${path}`));
+      console.log(c.dim(`  edit ${sym.arrow} ${path}`));
     }
-  } else if (request.tool === "web_fetch") {
-    console.log(colors.dim(`  Fetch: ${request.args.url}`));
+  } else if (tool === "web_fetch") {
+    console.log(c.dim(`  fetch ${sym.arrow} ${request.args.url}`));
   }
 
-  const answer = await askQuestion(colors.warn("  Allow? [y/n] "));
+  const answer = await ask(c.dim("  allow? ") + c.warn("[y/n] "));
   return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
 }
 
 function printWelcome() {
   console.log();
-  console.log(colors.primary("  ☕ kaldi"));
-  console.log(colors.dim("  Your coding companion"));
+  console.log(`  ${c.accent("☕")} ${c.text("kaldi")}`);
   console.log();
 }
 
 function printHelp() {
-  console.log(`
-${colors.primary("Commands:")}
-  /help      Show this help
-  /clear     Clear conversation
-  /compact   Toggle auto-approve mode
-  /usage     Show token usage
-  /save      Save session
-  /load      Load previous session
-  /quit      Exit
+  const cmds = [
+    ["/help", "show help"],
+    ["/clear", "clear history"],
+    ["/compact", "auto-approve tools"],
+    ["/usage", "token usage"],
+    ["/save", "save session"],
+    ["/load", "restore session"],
+    ["/quit", "exit"],
+  ];
 
-${colors.dim("Shortcuts: /status /diff /init /doctor")}
-`);
-}
-
-function formatCost(inputTokens: number, outputTokens: number): string {
-  const inputCost = (inputTokens / 1000000) * 3;
-  const outputCost = (outputTokens / 1000000) * 15;
-  return `$${(inputCost + outputCost).toFixed(4)}`;
+  console.log();
+  for (const [cmd, desc] of cmds) {
+    console.log(`  ${c.accent(cmd.padEnd(12))} ${c.dim(desc)}`);
+  }
+  console.log(c.dim(`\n  also: /status /diff /init /doctor /sessions /config`));
+  console.log();
 }
 
 function formatTokens(n: number): string {
@@ -128,22 +151,25 @@ function formatTokens(n: number): string {
   return `${(n / 1000000).toFixed(2)}M`;
 }
 
-async function runInteractiveSession(resumeSession?: Session) {
+function formatCost(input: number, output: number): string {
+  const cost = (input / 1e6) * 3 + (output / 1e6) * 15;
+  return `$${cost.toFixed(4)}`;
+}
+
+async function runSession(resumeSession?: Session) {
   printWelcome();
 
   if (!isConfigured()) {
-    console.log(colors.warn("  No API key configured.\n"));
-    console.log(colors.dim("  Quick setup:"));
-    console.log(colors.info("  kaldi beans -p anthropic -k your-api-key\n"));
+    console.log(c.warn("  no api key configured"));
+    console.log(c.dim(`  run: kaldi beans -p anthropic -k YOUR_KEY\n`));
     return;
   }
 
   const config = getConfig();
   const cwd = process.cwd();
 
-  console.log(colors.dim(`  ${config.provider} · ${config.model || "default"}`));
-  console.log(colors.dim(`  ${cwd}`));
-  console.log();
+  console.log(c.dim(`  ${config.provider} ${sym.dot} ${config.model || "default"}`));
+  console.log(c.dim(`  ${cwd}\n`));
 
   const provider = createProvider(config.provider, {
     apiKey: config.apiKey,
@@ -153,15 +179,12 @@ async function runInteractiveSession(resumeSession?: Session) {
 
   const tools = createDefaultRegistry();
 
-  let session: Session;
-  if (resumeSession) {
-    session = resumeSession;
-    console.log(colors.dim(`  Resumed · ${session.metadata.messageCount} messages\n`));
-  } else {
-    session = createSession(cwd, config.provider, config.model || "default");
-  }
-
+  let session = resumeSession || createSession(cwd, config.provider, config.model || "default");
   let compactMode = false;
+
+  if (resumeSession) {
+    console.log(c.dim(`  resumed ${sym.dot} ${session.metadata.messageCount} messages\n`));
+  }
 
   const agent = new Agent({
     provider,
@@ -171,33 +194,29 @@ async function runInteractiveSession(resumeSession?: Session) {
     callbacks: {
       onText: (text) => {
         if (!isProcessing) return;
+        clearStatus();
         process.stdout.write(text);
       },
       onToolUse: (name, args) => {
-        // Show tool activity inline
-        if (name === "read_file") {
-          console.log(colors.dim(`\n  Reading ${(args.path as string).split('/').pop()}...`));
-        } else if (name === "glob") {
-          console.log(colors.dim(`\n  Finding ${args.pattern}...`));
-        } else if (name === "grep") {
-          console.log(colors.dim(`\n  Searching for ${args.pattern}...`));
-        } else if (name === "list_dir") {
-          console.log(colors.dim(`\n  Listing ${args.path}...`));
-        }
+        const file = (args.path as string)?.split("/").pop() ||
+                     (args.pattern as string) || "";
+        setStatus(`${name} ${file}`);
       },
-      onToolResult: (name, result, isError) => {
+      onToolResult: (name, _, isError) => {
+        clearStatus();
         if (isError) {
-          console.log(colors.error(`  ✗ ${name} failed`));
+          console.log(`  ${sym.cross} ${c.dim(name)}`);
         } else if (!["read_file", "glob", "grep", "list_dir"].includes(name)) {
-          // Only show completion for mutation tools
-          console.log(colors.success(`  ✓ ${name}`));
+          console.log(`  ${sym.check} ${c.dim(name)}`);
         }
       },
       onPermissionRequest: async (request) => {
         if (compactMode) {
-          if (request.tool === "bash") {
-            console.log(colors.dim(`\n  $ ${(request.args.command as string).slice(0, 60)}...`));
-          }
+          clearStatus();
+          const info = request.tool === "bash"
+            ? (request.args.command as string).slice(0, 50)
+            : request.args.path || request.args.url || "";
+          console.log(c.dim(`  ${sym.arrow} ${request.tool} ${info}`));
           return true;
         }
         return askPermission(request);
@@ -209,51 +228,47 @@ async function runInteractiveSession(resumeSession?: Session) {
     },
   });
 
-  currentAgent = agent;
-
-  // Handle Ctrl+C
+  // Ctrl+C handler
   process.on("SIGINT", () => {
     if (isProcessing) {
-      console.log(colors.dim("\n\n  Cancelled.\n"));
+      clearStatus();
+      console.log(c.dim("\n  cancelled\n"));
       agent.stop();
       isProcessing = false;
       prompt();
     } else {
-      console.log(colors.dim("\n  Goodbye.\n"));
+      console.log(c.dim("\n  bye\n"));
       process.exit(0);
     }
   });
 
   const prompt = () => {
-    getReadline().question(colors.primary("> "), async (input) => {
-      const trimmed = input.trim();
+    getReadline().question(`${sym.prompt} `, async (input) => {
+      const text = input.trim();
+      if (!text) return prompt();
 
-      if (!trimmed) {
-        prompt();
-        return;
+      if (text.startsWith("/")) {
+        await handleCommand(text, agent, session, {
+          compactMode,
+          setCompact: (v) => (compactMode = v),
+        });
+        return prompt();
       }
 
-      // Handle slash commands
-      if (trimmed.startsWith("/")) {
-        await handleCommand(trimmed, agent, session, { compactMode, setCompactMode: (v) => compactMode = v });
-        prompt();
-        return;
-      }
-
-      // Run the agent
       isProcessing = true;
+      console.log();
 
       try {
-        console.log();
-        await agent.run(trimmed);
+        await agent.run(text);
         session.messages = agent.getMessages();
-        console.log("\n");
-      } catch (error) {
+      } catch (e) {
         if (isProcessing) {
-          console.log(colors.error(`\n  Error: ${error instanceof Error ? error.message : error}\n`));
+          console.log(`\n  ${sym.cross} ${c.dim(e instanceof Error ? e.message : String(e))}`);
         }
       }
 
+      clearStatus();
+      console.log();
       isProcessing = false;
       prompt();
     });
@@ -266,297 +281,238 @@ async function handleCommand(
   input: string,
   agent: Agent,
   session: Session,
-  state: { compactMode: boolean; setCompactMode: (v: boolean) => void }
-): Promise<void> {
+  state: { compactMode: boolean; setCompact: (v: boolean) => void }
+) {
   const [cmd, ...args] = input.toLowerCase().split(" ");
 
-  switch (cmd) {
-    case "/quit":
-    case "/exit":
-    case "/q":
-      console.log(colors.dim("\n  Goodbye.\n"));
-      rl?.close();
-      process.exit(0);
+  const commands: Record<string, () => Promise<void> | void> = {
+    "/quit": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
+    "/exit": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
+    "/q": () => { console.log(c.dim("\n  bye\n")); process.exit(0); },
 
-    case "/help":
-    case "/h":
-      printHelp();
-      break;
+    "/help": () => printHelp(),
+    "/h": () => printHelp(),
 
-    case "/clear":
+    "/clear": () => {
       agent.clearHistory();
       session.messages = [];
       session.totalInputTokens = 0;
       session.totalOutputTokens = 0;
-      console.log(colors.dim("  Cleared.\n"));
-      break;
+      console.log(c.dim("  cleared\n"));
+    },
 
-    case "/config":
+    "/config": () => {
       const cfg = getConfig();
-      console.log(colors.dim(`\n  Provider: ${cfg.provider}`));
-      console.log(colors.dim(`  Model: ${cfg.model || "default"}`));
-      console.log(colors.dim(`  Config: ${getConfigPath()}\n`));
-      break;
+      console.log(c.dim(`\n  provider  ${cfg.provider}`));
+      console.log(c.dim(`  model     ${cfg.model || "default"}`));
+      console.log(c.dim(`  config    ${getConfigPath()}\n`));
+    },
 
-    case "/usage":
-      const usage = agent.getUsage();
-      console.log(colors.dim(`\n  Tokens: ${formatTokens(usage.inputTokens)} in, ${formatTokens(usage.outputTokens)} out`));
-      console.log(colors.dim(`  Cost: ~${formatCost(usage.inputTokens, usage.outputTokens)}\n`));
-      break;
+    "/usage": () => {
+      const u = agent.getUsage();
+      console.log(c.dim(`\n  tokens  ${formatTokens(u.inputTokens)} in ${sym.dot} ${formatTokens(u.outputTokens)} out`));
+      console.log(c.dim(`  cost    ~${formatCost(u.inputTokens, u.outputTokens)}\n`));
+    },
 
-    case "/compact":
-      state.setCompactMode(!state.compactMode);
+    "/compact": () => {
+      state.setCompact(!state.compactMode);
       console.log(state.compactMode
-        ? colors.warn("  Compact mode on - tools auto-approved\n")
-        : colors.dim("  Compact mode off - will ask for approval\n")
+        ? c.warn("  compact on") + c.dim(" - tools auto-approved\n")
+        : c.dim("  compact off\n")
       );
-      break;
+    },
 
-    case "/sessions":
-      const sessions = await listSessions();
-      if (sessions.length === 0) {
-        console.log(colors.dim("\n  No saved sessions.\n"));
-      } else {
-        console.log(colors.dim("\n  Sessions:"));
-        for (const s of sessions.slice(0, 5)) {
-          const dir = s.workingDirectory.split("/").pop();
-          console.log(colors.dim(`    ${s.id.slice(0, 8)} · ${dir} · ${s.messageCount} msgs`));
-        }
-        console.log();
+    "/sessions": async () => {
+      const list = await listSessions();
+      if (!list.length) {
+        console.log(c.dim("\n  no sessions\n"));
+        return;
       }
-      break;
+      console.log();
+      for (const s of list.slice(0, 5)) {
+        const dir = s.workingDirectory.split("/").pop();
+        console.log(c.dim(`  ${s.id.slice(0, 8)} ${sym.dot} ${dir} ${sym.dot} ${s.messageCount} msgs`));
+      }
+      console.log();
+    },
 
-    case "/save":
+    "/save": async () => {
       await saveSession(session);
-      console.log(colors.success(`  Saved: ${session.metadata.id.slice(0, 8)}\n`));
-      break;
+      console.log(`  ${sym.check} ${c.dim(`saved ${session.metadata.id.slice(0, 8)}`)}\n`);
+    },
 
-    case "/load":
-      const sessionId = args[0];
-      let loadedSession: Session | null = null;
+    "/load": async () => {
+      const id = args[0];
+      let loaded = id ? await loadSession(id) : await getSessionForDirectory(process.cwd());
+      if (!loaded) loaded = await getLatestSession();
 
-      if (sessionId) {
-        loadedSession = await loadSession(sessionId);
+      if (loaded) {
+        console.log(`  ${sym.check} ${c.dim(`loaded ${loaded.metadata.id.slice(0, 8)}`)}\n`);
       } else {
-        loadedSession = await getSessionForDirectory(process.cwd());
-        if (!loadedSession) loadedSession = await getLatestSession();
+        console.log(c.dim("  no session found\n"));
       }
+    },
 
-      if (loadedSession) {
-        console.log(colors.success(`  Loaded: ${loadedSession.metadata.id.slice(0, 8)}\n`));
-      } else {
-        console.log(colors.dim("  No session found.\n"));
-      }
-      break;
-
-    case "/init":
+    "/init": async () => {
       console.log();
       isProcessing = true;
-      try {
-        await agent.run("Briefly describe this project structure. Be concise.");
-      } catch {}
+      try { await agent.run("Describe this project briefly."); } catch {}
       isProcessing = false;
       console.log("\n");
-      break;
+    },
 
-    case "/status":
+    "/status": async () => {
       isProcessing = true;
-      try {
-        await agent.run("Run git status, show output only.");
-      } catch {}
+      try { await agent.run("Run git status, output only."); } catch {}
       isProcessing = false;
       console.log("\n");
-      break;
+    },
 
-    case "/diff":
+    "/diff": async () => {
       isProcessing = true;
-      try {
-        await agent.run("Run git diff, show output only.");
-      } catch {}
+      try { await agent.run("Run git diff, output only."); } catch {}
       isProcessing = false;
       console.log("\n");
-      break;
+    },
 
-    case "/doctor":
-      console.log(colors.dim("\n  Checking setup..."));
-      const doctorConfig = getConfig();
-      console.log(doctorConfig.apiKey
-        ? colors.success("  ✓ API key configured")
-        : colors.error("  ✗ No API key")
-      );
-      console.log(colors.dim(`    ${doctorConfig.provider} · ${doctorConfig.model || "default"}`));
+    "/doctor": async () => {
+      console.log();
+      const cfg = getConfig();
+      console.log(cfg.apiKey ? `  ${sym.check} api key` : `  ${sym.cross} no api key`);
 
-      const nodeVersion = process.version;
-      const major = parseInt(nodeVersion.slice(1).split(".")[0]);
-      console.log(major >= 20
-        ? colors.success(`  ✓ Node ${nodeVersion}`)
-        : colors.warn(`  ⚠ Node ${nodeVersion} (20+ recommended)`)
-      );
+      const v = parseInt(process.version.slice(1).split(".")[0]);
+      console.log(v >= 20 ? `  ${sym.check} node ${process.version}` : `  ${sym.cross} node ${process.version}`);
 
       try {
-        const { execSync } = await import("child_process");
-        execSync("git --version", { stdio: "pipe" });
-        console.log(colors.success("  ✓ Git available"));
+        (await import("child_process")).execSync("git --version", { stdio: "pipe" });
+        console.log(`  ${sym.check} git`);
       } catch {
-        console.log(colors.warn("  ⚠ Git not found"));
+        console.log(`  ${sym.cross} git`);
       }
       console.log();
-      break;
+    },
+  };
 
-    default:
-      console.log(colors.dim(`  Unknown: ${cmd}. Try /help\n`));
+  const handler = commands[cmd];
+  if (handler) {
+    await handler();
+  } else {
+    console.log(c.dim(`  unknown: ${cmd}\n`));
   }
 }
 
-// CLI setup
-const program = new Command();
-
-program
+// CLI
+const program = new Command()
   .name("kaldi")
-  .description("☕ Your coding companion")
+  .description("☕ coding companion")
   .version(VERSION);
 
 program
   .command("beans")
-  .description("Configure LLM provider")
-  .option("-p, --provider <provider>", "Provider: anthropic, openai, ollama, openrouter")
-  .option("-k, --key <key>", "API key")
-  .option("-m, --model <model>", "Model name")
-  .option("-l, --list", "List configurations")
-  .action((options) => {
-    if (options.list) {
-      console.log(colors.dim("\n  Providers:\n"));
+  .description("configure provider")
+  .option("-p, --provider <name>", "anthropic, openai, ollama, openrouter")
+  .option("-k, --key <key>", "api key")
+  .option("-m, --model <model>", "model name")
+  .option("-l, --list", "list configs")
+  .action((opts) => {
+    if (opts.list) {
       const configs = getAllProviderConfigs();
       const current = getConfig().provider;
-
-      for (const [provider, cfg] of Object.entries(configs)) {
-        const isCurrent = provider === current;
-        const prefix = isCurrent ? colors.success("→") : " ";
-        console.log(`  ${prefix} ${provider}`);
-        console.log(colors.dim(`      Key: ${cfg.apiKey}`));
-        console.log(colors.dim(`      Model: ${cfg.model}`));
+      console.log();
+      for (const [name, cfg] of Object.entries(configs)) {
+        const mark = name === current ? c.success("→") : " ";
+        console.log(`  ${mark} ${name}`);
+        console.log(c.dim(`      ${cfg.apiKey} ${sym.dot} ${cfg.model}`));
       }
       console.log();
       return;
     }
 
-    if (options.provider) {
-      const validProviders: ProviderType[] = ["anthropic", "openai", "ollama", "openrouter"];
-      if (!validProviders.includes(options.provider)) {
-        console.log(colors.error(`  Invalid provider. Use: ${validProviders.join(", ")}`));
+    if (opts.provider) {
+      if (!["anthropic", "openai", "ollama", "openrouter"].includes(opts.provider)) {
+        console.log(c.error("  invalid provider"));
         return;
       }
-      setProvider(options.provider);
-      console.log(colors.success(`  ✓ Provider: ${options.provider}`));
+      setProvider(opts.provider);
+      console.log(`  ${sym.check} provider: ${opts.provider}`);
     }
 
-    if (options.key) {
-      const config = getConfig();
-      setApiKey(config.provider, options.key);
-      console.log(colors.success(`  ✓ API key set`));
+    if (opts.key) {
+      setApiKey(getConfig().provider, opts.key);
+      console.log(`  ${sym.check} api key set`);
     }
 
-    if (options.model) {
-      const config = getConfig();
-      setModel(config.provider, options.model);
-      console.log(colors.success(`  ✓ Model: ${options.model}`));
+    if (opts.model) {
+      setModel(getConfig().provider, opts.model);
+      console.log(`  ${sym.check} model: ${opts.model}`);
     }
 
-    if (!options.provider && !options.key && !options.model && !options.list) {
-      console.log(colors.dim("\n  Configure your LLM:\n"));
-      console.log("    kaldi beans -p anthropic -k your-key");
-      console.log("    kaldi beans -m claude-sonnet-4-20250514");
-      console.log("    kaldi beans -l\n");
+    if (!opts.provider && !opts.key && !opts.model && !opts.list) {
+      console.log(c.dim("\n  kaldi beans -p anthropic -k YOUR_KEY"));
+      console.log(c.dim("  kaldi beans -l\n"));
     }
   });
 
 program
   .command("roast [path]")
-  .description("Review code")
+  .description("review code")
   .action(async (path) => {
     if (!isConfigured()) {
-      console.log(colors.error("  Configure first: kaldi beans -p anthropic -k your-key"));
+      console.log(c.error("  configure first: kaldi beans -p anthropic -k KEY"));
       return;
     }
 
-    const targetPath = path || ".";
-    console.log(colors.dim(`\n  Reviewing ${targetPath}...\n`));
+    const target = path || ".";
+    console.log(c.dim(`\n  reviewing ${target}...\n`));
 
     const config = getConfig();
-    const provider = createProvider(config.provider, {
-      apiKey: config.apiKey,
-      model: config.model,
-      baseUrl: config.baseUrl,
-    });
-    const tools = createDefaultRegistry();
-
     const agent = new Agent({
-      provider,
-      tools,
+      provider: createProvider(config.provider, config),
+      tools: createDefaultRegistry(),
       systemPrompt: buildSystemPrompt(process.cwd()),
       requirePermission: false,
-      callbacks: {
-        onText: (text) => process.stdout.write(text),
-      },
+      callbacks: { onText: (t) => process.stdout.write(t) },
     });
 
     try {
-      await agent.run(`Review the code in "${targetPath}". Focus on bugs, security issues, and improvements. Be direct and concise.`);
-      console.log("\n");
-    } catch (error) {
-      console.log(colors.error(`\n  Error: ${error instanceof Error ? error.message : error}\n`));
+      await agent.run(`Review "${target}". Focus on bugs and issues. Be concise.`);
+    } catch (e) {
+      console.log(c.error(`\n  error: ${e}`));
     }
+    console.log("\n");
   });
 
 program
   .command("refill")
-  .description("Resume previous session")
+  .description("resume session")
   .action(async () => {
     let session = await getSessionForDirectory(process.cwd());
     if (!session) session = await getLatestSession();
-
-    if (session) {
-      await runInteractiveSession(session);
-    } else {
-      console.log(colors.dim("  No previous session. Starting fresh.\n"));
-      await runInteractiveSession();
-    }
+    await runSession(session || undefined);
   });
 
 program
   .command("doctor")
-  .description("Check setup")
+  .description("check setup")
   .action(async () => {
-    console.log(colors.dim("\n  Checking setup...\n"));
+    console.log();
+    const cfg = getConfig();
+    console.log(cfg.apiKey ? `  ${sym.check} api key` : `  ${sym.cross} no api key`);
+    console.log(c.dim(`    ${cfg.provider} ${sym.dot} ${cfg.model || "default"}`));
 
-    const config = getConfig();
-    console.log(config.apiKey
-      ? colors.success("  ✓ API key configured")
-      : colors.error("  ✗ No API key")
-    );
-
-    const nodeVersion = process.version;
-    const major = parseInt(nodeVersion.slice(1).split(".")[0]);
-    console.log(major >= 20
-      ? colors.success(`  ✓ Node ${nodeVersion}`)
-      : colors.warn(`  ⚠ Node ${nodeVersion}`)
-    );
+    const v = parseInt(process.version.slice(1).split(".")[0]);
+    console.log(v >= 20 ? `  ${sym.check} node ${process.version}` : `  ${sym.cross} node ${process.version}`);
 
     try {
-      const { execSync } = await import("child_process");
-      execSync("git --version", { stdio: "pipe" });
-      console.log(colors.success("  ✓ Git"));
+      (await import("child_process")).execSync("git --version", { stdio: "pipe" });
+      console.log(`  ${sym.check} git`);
     } catch {
-      console.log(colors.warn("  ⚠ Git not found"));
+      console.log(`  ${sym.cross} git`);
     }
 
-    console.log(colors.dim(`\n  Config: ${getConfigPath()}`));
-    console.log(colors.dim(`  Sessions: ${getSessionsDir()}\n`));
+    console.log(c.dim(`\n  config   ${getConfigPath()}`));
+    console.log(c.dim(`  sessions ${getSessionsDir()}\n`));
   });
 
-// Default - start interactive session
-program.action(() => {
-  runInteractiveSession();
-});
-
+program.action(() => runSession());
 program.parse();

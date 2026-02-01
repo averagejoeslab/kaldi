@@ -4,3 +4,6 @@ export * from "./autocomplete.js";
 export * from "./status.js";
 export * from "./clipboard.js";
 export * from "./input.js";
+export * from "./terminal.js";
+export * from "./keyboard.js";
+export * from "./vim.js";

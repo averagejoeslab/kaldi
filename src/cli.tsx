@@ -26,6 +26,7 @@ import {
   type Session,
 } from "./session/index.js";
 import { formatDiff, getChangeStats, formatChangeStats } from "./ui/diff.js";
+import { createReadlineWithAutocomplete, COMMANDS } from "./ui/autocomplete.js";
 import type { ProviderType } from "./providers/types.js";
 import { PROVIDER_MODELS } from "./providers/index.js";
 
@@ -48,10 +49,7 @@ let currentAgent: Agent | null = null;
 
 function getReadline(): readline.Interface {
   if (!rl) {
-    rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+    rl = createReadlineWithAutocomplete();
   }
   return rl;
 }

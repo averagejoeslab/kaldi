@@ -113,3 +113,122 @@ export {
   PLANNING_PATTERNS,
   IMMEDIATE_PATTERNS,
 } from "./planner.js";
+
+export {
+  // Types
+  type MemoryFile,
+  type MemoryConfig,
+  type MemoryResult,
+
+  // Functions
+  loadMemory,
+  hasMemory,
+  getMemoryPath,
+  createMemory,
+  ensureGlobalMemory,
+  updateMemory,
+  appendToMemory,
+  formatMemoryInfo,
+  buildMemoryPrompt,
+
+  // Constants
+  DEFAULT_KALDI_MD,
+  DEFAULT_GLOBAL_MD,
+  MEMORY_FILENAMES,
+  GLOBAL_MEMORY_PATH,
+  USER_MEMORY_PATH,
+} from "./memory.js";
+
+export {
+  // Types
+  type MCPServerConfig,
+  type MCPTool,
+  type MCPResource,
+  type MCPPrompt,
+  type MCPServerState,
+  type MCPConfig,
+
+  // Classes
+  MCPClient,
+
+  // Functions
+  loadMCPConfig,
+  saveMCPConfig,
+  addMCPServer,
+  removeMCPServer,
+  getMCPClient,
+  resetMCPClient,
+  initializeMCPServers,
+  formatMCPStatus,
+} from "./mcp.js";
+
+export {
+  // Types
+  type CompactionConfig,
+  type CompactionResult,
+  type ConversationState,
+
+  // Classes
+  CompactionManager,
+
+  // Functions
+  estimateTokens,
+  estimateMessageTokens,
+  estimateTotalTokens,
+  getCompactionManager,
+  resetCompactionManager,
+  buildSummarizationPrompt,
+  formatCompactionNotification,
+  formatContextBar,
+  formatCompactionHistory,
+
+  // Constants
+  COMPACTION_PROMPT,
+} from "./compaction.js";
+
+export {
+  // Types
+  type PermissionRule,
+  type PermissionRequest,
+  type PermissionDecision,
+  type PermissionConfig,
+
+  // Classes
+  PermissionManager,
+
+  // Functions
+  getPermissionManager,
+  resetPermissionManager,
+  formatPermissionRules,
+  formatSessionPermissions,
+  formatPermissionOptions,
+} from "./permissions.js";
+
+export {
+  // Types
+  type ExportMessage,
+  type ToolCallExport,
+  type ExportMetadata,
+  type ExportConfig,
+  type ExportResult,
+
+  // Functions
+  exportToMarkdown,
+  exportToJSON,
+  exportToHTML,
+  exportToFile,
+  formatExportResult,
+  formatExportOptions,
+} from "./export.js";
+
+export {
+  // Types
+  type ValidationResult,
+  type ValidationConfig,
+
+  // Functions
+  validateApiKey,
+  validateKeyFormat,
+  formatValidationResult,
+  formatValidationProgress,
+} from "./validation.js";

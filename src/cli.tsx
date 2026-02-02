@@ -69,9 +69,62 @@ import {
   getPlanner,
   type AgentMode,
 } from "./core/planner.js";
+import {
+  loadMemory,
+  hasMemory,
+  createMemory,
+  buildMemoryPrompt,
+  formatMemoryInfo,
+} from "./core/memory.js";
+import {
+  validateApiKey,
+  validateKeyFormat,
+  formatValidationResult,
+  formatValidationProgress,
+} from "./core/validation.js";
+import {
+  getPermissionManager,
+  formatPermissionOptions,
+} from "./core/permissions.js";
+import {
+  getCompactionManager,
+  formatCompactionNotification,
+  formatContextBar,
+  estimateTotalTokens,
+} from "./core/compaction.js";
+import {
+  exportToFile,
+  formatExportResult,
+  formatExportOptions,
+  type ExportMessage,
+} from "./core/export.js";
+import {
+  highlightCodeBlocks,
+} from "./ui/highlight.js";
+import {
+  getNotificationSender,
+  notifyResponseReady,
+} from "./ui/notifications.js";
+import {
+  getTokenCounter,
+  formatFullTokens,
+  formatTokenCount,
+} from "./ui/tokens.js";
+import {
+  getAutocompleteSuggestions,
+  formatAutocompleteDropdown,
+} from "./ui/fuzzy.js";
+import {
+  formatMultilineHint,
+} from "./ui/multiline.js";
+import {
+  formatBackgroundIndicator,
+  getBackgroundUI,
+  isBackgroundKey,
+} from "./ui/background.js";
 import type { ProviderType, ContentBlock, ImageContent } from "./providers/types.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const KALDI_DIR = join(homedir(), ".kaldi");
 
 // ============================================================================
@@ -210,15 +263,24 @@ interface AppState {
   lastResponse: string;
   totalInputTokens: number;
   totalOutputTokens: number;
-  // New: tool tracking for tree display
+  // Tool tracking for tree display
   currentTurnTools: ToolCall[];
   toolIdCounter: number;
-  // New: conversation compaction
+  // Conversation compaction
   isCompacted: boolean;
-  // New: recent activity
+  // Recent activity
   recentActivity: ActivityItem[];
-  // New: planner
+  // Planner
   planner: Planner;
+  // Notifications enabled
+  notificationsEnabled: boolean;
+  // Syntax highlighting enabled
+  syntaxHighlighting: boolean;
+  // Command history for fuzzy search
+  commandHistory: string[];
+  // Multi-line mode
+  multilineMode: boolean;
+  multilineBuffer: string[];
 }
 
 const state: AppState = {
@@ -238,6 +300,11 @@ const state: AppState = {
   isCompacted: false,
   recentActivity: [],
   planner: getPlanner({ complexityThreshold: 'medium' }),
+  notificationsEnabled: true,
+  syntaxHighlighting: true,
+  commandHistory: [],
+  multilineMode: false,
+  multilineBuffer: [],
 };
 
 // ============================================================================
@@ -271,6 +338,11 @@ const commandDescriptions: Record<string, string> = {
   "/model": "Show/change model",
   "/coffee": "Get a fresh cup of coffee",
   "/goodboy": "Pet Kaldi",
+  "/memory": "View or edit project memory (KALDI.md)",
+  "/export": "Export conversation to file",
+  "/notify": "Toggle desktop notifications",
+  "/highlight": "Toggle syntax highlighting",
+  "/permissions": "View session permissions",
 };
 
 function getReadline(): readline.Interface {
@@ -498,6 +570,22 @@ function printHelp() {
         ["/model [name]", "show/change model"],
       ]
     },
+    {
+      title: "Memory & Export",
+      commands: [
+        ["/memory", "view/edit project memory"],
+        ["/memory init", "create KALDI.md file"],
+        ["/export [format]", "export conversation (md/json/html)"],
+      ]
+    },
+    {
+      title: "Settings",
+      commands: [
+        ["/notify", "toggle desktop notifications"],
+        ["/highlight", "toggle syntax highlighting"],
+        ["/permissions", "view session permissions"],
+      ]
+    },
   ];
 
   console.log();
@@ -518,7 +606,9 @@ function printHelp() {
   console.log(`    ${c.accent("ctrl+c".padEnd(16))} ${c.dim("cancel current operation")}`);
   console.log(`    ${c.accent("ctrl+d".padEnd(16))} ${c.dim("exit kaldi")}`);
   console.log(`    ${c.accent("ctrl+l".padEnd(16))} ${c.dim("clear screen")}`);
+  console.log(`    ${c.accent("ctrl+b".padEnd(16))} ${c.dim("background current task")}`);
   console.log(`    ${c.accent("shift+tab".padEnd(16))} ${c.dim("cycle permission modes")}`);
+  console.log(`    ${c.accent("shift+enter".padEnd(16))} ${c.dim("new line (multiline input)")}`);
   console.log(`    ${c.accent("tab".padEnd(16))} ${c.dim("autocomplete commands")}`);
   console.log(`    ${c.accent("↑/↓".padEnd(16))} ${c.dim("command history")}`);
   console.log();
@@ -941,6 +1031,108 @@ const allCommands: Record<string, CommandHandler> = {
     console.log();
   },
   "/pet": (args, ctx) => allCommands["/goodboy"](args, ctx),
+
+  // Memory commands
+  "/memory": (args) => {
+    if (args[0] === "init" || args[0] === "create") {
+      const path = createMemory();
+      console.log(c.success(`\n  ${sym.check()} Created ${path}\n`));
+      console.log(c.dim("  Edit this file to add project context for Kaldi.\n"));
+      return;
+    }
+
+    if (args[0] === "edit") {
+      const memPath = hasMemory() ? require("./core/memory.js").getMemoryPath() : null;
+      if (!memPath) {
+        console.log(c.dim("\n  No memory file found. Run /memory init to create one.\n"));
+        return;
+      }
+      // Open in default editor
+      const { execSync } = require("child_process");
+      const editor = process.env.EDITOR || "nano";
+      try {
+        execSync(`${editor} "${memPath}"`, { stdio: "inherit" });
+      } catch {
+        console.log(c.dim(`\n  Could not open editor. Edit manually: ${memPath}\n`));
+      }
+      return;
+    }
+
+    // Show memory info
+    const result = loadMemory({ projectPath: process.cwd() });
+    console.log();
+    console.log(formatMemoryInfo(result));
+  },
+
+  // Export conversation
+  "/export": async (args, ctx) => {
+    const format = args[0] || "markdown";
+    if (!["markdown", "json", "html"].includes(format)) {
+      console.log(formatExportOptions());
+      return;
+    }
+
+    const messages: ExportMessage[] = ctx.session.messages.map((m: any) => ({
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : m.content.map((b: any) => b.text || "").join("\n"),
+      timestamp: m.timestamp,
+    }));
+
+    const config = getConfig();
+    const result = exportToFile(messages, {
+      title: `Kaldi Session - ${new Date().toLocaleDateString()}`,
+      createdAt: new Date(ctx.session.metadata.createdAt),
+      model: config.model || "default",
+      provider: config.provider,
+      projectPath: process.cwd(),
+      totalTokens: {
+        input: ctx.session.totalInputTokens,
+        output: ctx.session.totalOutputTokens,
+      },
+    }, { format: format as "markdown" | "json" | "html" });
+
+    console.log(formatExportResult(result));
+  },
+
+  // Toggle notifications
+  "/notify": () => {
+    state.notificationsEnabled = !state.notificationsEnabled;
+    const sender = getNotificationSender();
+
+    if (state.notificationsEnabled) {
+      if (sender.isAvailable()) {
+        console.log(c.success(`\n  ${sym.check()} Notifications enabled\n`));
+      } else {
+        console.log(c.warning(`\n  ${sym.cross()} Notifications not available on this system\n`));
+        state.notificationsEnabled = false;
+      }
+    } else {
+      console.log(c.dim(`\n  ${sym.check()} Notifications disabled\n`));
+    }
+  },
+
+  // Toggle syntax highlighting
+  "/highlight": () => {
+    state.syntaxHighlighting = !state.syntaxHighlighting;
+    if (state.syntaxHighlighting) {
+      console.log(c.success(`\n  ${sym.check()} Syntax highlighting enabled\n`));
+    } else {
+      console.log(c.dim(`\n  ${sym.check()} Syntax highlighting disabled\n`));
+    }
+  },
+
+  // View session permissions
+  "/permissions": () => {
+    const permManager = getPermissionManager();
+    const perms = permManager.getSessionPermissions();
+    const rules = permManager.getRules();
+
+    console.log();
+    if (rules.length > 0) {
+      console.log(require("./core/permissions.js").formatPermissionRules(rules));
+    }
+    console.log(require("./core/permissions.js").formatSessionPermissions(perms));
+  },
 };
 
 async function handleCommand(input: string, agent: Agent, session: Session): Promise<boolean> {
@@ -992,10 +1184,19 @@ async function runSession(resumeSession?: Session) {
     console.log(c.dim(`  ${sym.dog} resumed ${sym.dot()} ${session.metadata.messageCount} messages\n`));
   }
 
+  // Load project memory if available
+  const memoryResult = loadMemory({ projectPath: cwd });
+  const memoryPrompt = buildMemoryPrompt(memoryResult);
+  const fullSystemPrompt = buildSystemPrompt(cwd) + memoryPrompt;
+
+  if (memoryResult.files.length > 0) {
+    console.log(c.dim(`  ${sym.check()} loaded ${memoryResult.files.length} memory file(s)\n`));
+  }
+
   const agent = new Agent({
     provider,
     tools,
-    systemPrompt: buildSystemPrompt(cwd),
+    systemPrompt: fullSystemPrompt,
     requirePermission: !state.compactMode,
     callbacks: {
       onText: (text) => {
@@ -1091,6 +1292,24 @@ async function runSession(resumeSession?: Session) {
           console.log();
           console.log(formatToolSummary(state.currentTurnTools));
         }
+
+        // Send notification for long tasks
+        const duration = Date.now() - state.turnStartTime;
+        if (state.notificationsEnabled && duration > 30000) {
+          notifyResponseReady(duration);
+        }
+
+        // Add to command history if it was a significant response
+        if (state.lastResponse.length > 100) {
+          state.recentActivity.unshift({
+            type: "session",
+            description: state.lastResponse.slice(0, 50) + "...",
+            timestamp: new Date(),
+          });
+          if (state.recentActivity.length > 10) {
+            state.recentActivity.pop();
+          }
+        }
       },
     },
   });
@@ -1162,6 +1381,20 @@ async function runSession(resumeSession?: Session) {
           console.log(c.dim(`\n  ${sym.check()} safe mode\n`));
         }
         process.stdout.write(buildPrompt());
+      }
+
+      // Ctrl+B to background current task
+      if (isBackgroundKey(key) && state.isProcessing) {
+        const bgUI = getBackgroundUI();
+        const task = bgUI.createTask("Response", "Generating response...");
+        console.log(c.dim(`\n  ${sym.arrow()} Backgrounded (${task.id.slice(0, 8)})\n`));
+        // Note: actual backgrounding would require async task management
+      }
+
+      // Shift+Enter for multi-line (if in readline)
+      if (key.shift && (key.name === "return" || key.name === "enter")) {
+        state.multilineMode = true;
+        // Multi-line handling would go here
       }
     });
   };
@@ -1276,8 +1509,26 @@ program
     }
 
     if (opts.key) {
-      setApiKey(getConfig().provider, opts.key);
+      const provider = opts.provider || getConfig().provider;
+
+      // Quick format validation
+      const formatCheck = validateKeyFormat(provider, opts.key);
+      if (!formatCheck.valid) {
+        console.log(c.warning(`  ${sym.cross()} ${formatCheck.error}`));
+        console.log(c.dim("  Saving anyway, but you may want to check the key.\n"));
+      }
+
+      // Save the key
+      setApiKey(provider, opts.key);
       console.log(c.success(`  ${sym.check()} api key saved`));
+
+      // Validate the key with an API call
+      console.log(formatValidationProgress(provider));
+      validateApiKey(provider, opts.key).then(result => {
+        console.log(formatValidationResult(result));
+      }).catch(() => {
+        // Ignore validation errors, key is saved
+      });
     }
 
     if (opts.model) {

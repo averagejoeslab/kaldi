@@ -46,9 +46,32 @@ import {
   formatDuration,
 } from "./ui/status.js";
 import { getClipboardImage, type ClipboardImage } from "./ui/clipboard.js";
+import {
+  renderWelcome,
+  renderCompactWelcome,
+  type WelcomeConfig,
+  type ActivityItem,
+} from "./ui/welcome.js";
+import {
+  formatToolTree,
+  formatToolCall,
+  formatToolSummary,
+  type ToolCall,
+} from "./ui/tool-tree.js";
+import {
+  renderStatusLine,
+  renderCompactionIndicator,
+  renderPromptHint,
+  type StatusLineConfig,
+} from "./ui/statusline.js";
+import {
+  Planner,
+  getPlanner,
+  type AgentMode,
+} from "./core/planner.js";
 import type { ProviderType, ContentBlock, ImageContent } from "./providers/types.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 const KALDI_DIR = join(homedir(), ".kaldi");
 
 // ============================================================================
@@ -187,6 +210,15 @@ interface AppState {
   lastResponse: string;
   totalInputTokens: number;
   totalOutputTokens: number;
+  // New: tool tracking for tree display
+  currentTurnTools: ToolCall[];
+  toolIdCounter: number;
+  // New: conversation compaction
+  isCompacted: boolean;
+  // New: recent activity
+  recentActivity: ActivityItem[];
+  // New: planner
+  planner: Planner;
 }
 
 const state: AppState = {
@@ -201,6 +233,11 @@ const state: AppState = {
   lastResponse: "",
   totalInputTokens: 0,
   totalOutputTokens: 0,
+  currentTurnTools: [],
+  toolIdCounter: 0,
+  isCompacted: false,
+  recentActivity: [],
+  planner: getPlanner({ complexityThreshold: 'medium' }),
 };
 
 // ============================================================================
@@ -356,8 +393,26 @@ function printBanner() {
   console.log();
 }
 
-function printWelcome() {
-  printBanner();
+function printWelcome(config?: { provider: string; model?: string }, cwd?: string) {
+  const termWidth = process.stdout.columns || 80;
+
+  // Use compact welcome for narrow terminals or when config not available
+  if (termWidth < 60 || !config) {
+    printBanner();
+    return;
+  }
+
+  const welcomeConfig: WelcomeConfig = {
+    version: VERSION,
+    userName: process.env.USER || process.env.USERNAME,
+    model: `${config.provider} ${config.model || "default"}`,
+    projectPath: cwd || process.cwd(),
+    recentActivity: state.recentActivity.slice(0, 3),
+  };
+
+  console.log();
+  console.log(renderWelcome(welcomeConfig));
+  console.log();
 }
 
 function printSessionInfo(config: { provider: string; model?: string }, cwd: string) {
@@ -909,9 +964,8 @@ async function handleCommand(input: string, agent: Agent, session: Session): Pro
 // ============================================================================
 
 async function runSession(resumeSession?: Session) {
-  printWelcome();
-
   if (!isConfigured()) {
+    printBanner();
     console.log(c.warning(`  ${sym.cross()} no api key configured`));
     console.log(c.dim(`  run: kaldi beans -p anthropic -k YOUR_KEY\n`));
     return;
@@ -920,7 +974,8 @@ async function runSession(resumeSession?: Session) {
   const config = getConfig();
   const cwd = process.cwd();
 
-  printSessionInfo(config, cwd);
+  // Use new welcome screen with full info
+  printWelcome(config, cwd);
   printModeBar();
 
   const provider = createProvider(config.provider, {
@@ -950,24 +1005,52 @@ async function runSession(resumeSession?: Session) {
         state.lastResponse += text;
       },
       onToolUse: (name, args) => {
+        // Track tool use
+        const toolCall: ToolCall = {
+          id: `tool_${++state.toolIdCounter}`,
+          name,
+          args: args as Record<string, unknown>,
+          startTime: Date.now(),
+        };
+        state.currentTurnTools.push(toolCall);
+
         if (!state.planMode) {
-          // Show tool in hierarchical format like Claude Code
+          // Show tool in tree format with better formatting
+          status.clear();
+          const isFirst = state.currentTurnTools.length === 1;
+          const prefix = isFirst ? sym.branch() : sym.branch();
           const argStr = formatToolArgs(name, args);
-          console.log(`\n  ${sym.bullet()} ${c.text(name)}${argStr ? c.dim(`(${argStr})`) : ""}`);
+
+          // Format tool name nicely
+          const toolName = name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          console.log(`${prefix} ${c.text(toolName)} ${c.dim(argStr)}`);
           startToolStatus(name, args);
         }
       },
       onToolResult: (name, result, isError) => {
         const completion = status.stop();
+
+        // Update the tool call with result
+        const toolCall = state.currentTurnTools[state.currentTurnTools.length - 1];
+        if (toolCall) {
+          toolCall.endTime = Date.now();
+          toolCall.isError = isError;
+          if (result) {
+            // Count lines for read operations
+            const lines = result.split('\n').length;
+            toolCall.resultLineCount = lines;
+          }
+        }
+
         if (isError) {
-          console.log(`  ${sym.branchLast()} ${sym.cross()} ${c.error("failed")} ${c.dim(completion)}`);
+          console.log(`${sym.branchLast()} ${sym.cross()} ${c.error("failed")} ${c.dim(completion)}`);
         } else {
-          // Show brief result for read operations
+          // Show line count for read operations like Claude Code
           if (["read_file", "glob", "grep", "list_dir"].includes(name) && result) {
-            const preview = result.slice(0, 50).replace(/\n/g, " ");
-            console.log(`  ${sym.branchLast()} ${c.dim(preview)}${result.length > 50 ? "..." : ""}`);
+            const lines = result.split('\n').length;
+            console.log(`${sym.branchLast()} ${c.dim(`(${lines} lines)`)} ${c.dim(completion)}`);
           } else {
-            console.log(`  ${sym.branchLast()} ${sym.check()} ${c.dim(completion)}`);
+            console.log(`${sym.branchLast()} ${sym.check()} ${c.dim(completion)}`);
           }
         }
       },
@@ -995,12 +1078,19 @@ async function runSession(resumeSession?: Session) {
       onTurnStart: () => {
         state.turnStartTime = Date.now();
         state.lastResponse = "";
-        // Show thinking status with star like Claude Code
+        state.currentTurnTools = [];
+        // Show thinking status
         const verb = getThinkingMessage();
         status.start(verb, false);
       },
       onTurnComplete: () => {
         status.clear();
+
+        // Show collapsed tool summary if many tools were used
+        if (!state.verbose && state.currentTurnTools.length > 5) {
+          console.log();
+          console.log(formatToolSummary(state.currentTurnTools));
+        }
       },
     },
   });

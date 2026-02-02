@@ -418,7 +418,7 @@ export class SelectionMenu {
       return true;
     }
     // Number keys for quick selection
-    const num = parseInt(key.sequence);
+    const num = parseInt(key.sequence || "");
     if (num >= 1 && num <= this.items.length) {
       this.selectedIndex = num - 1;
       this.select();

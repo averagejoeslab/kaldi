@@ -28,10 +28,12 @@ export function getMatchingCommands(input: string): Command[] {
   return COMMANDS.filter(cmd => cmd.name.startsWith(search));
 }
 
+type ChalkFn = (text: string) => string;
+
 export function createAutocompleteInput(
   prompt: string,
   onSubmit: (input: string) => void,
-  colors: { primary: chalk.Chalk; dim: chalk.Chalk }
+  colors: { primary: ChalkFn; dim: ChalkFn }
 ): void {
   const rl = readline.createInterface({
     input: process.stdin,

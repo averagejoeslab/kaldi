@@ -6,6 +6,24 @@ Kaldi is a BYOK (Bring Your Own Key) agentic coding CLI. Like a good cup of coff
 
 Named after the Ethiopian goatherd who discovered coffee, and inspired by man's best friend.
 
+---
+
+## Logo Options (Pick One)
+
+### Option 1 - Simple
+![Logo Option 1](logo-option-1.png)
+
+### Option 2 - Cartoon
+![Logo Option 2](logo-option-2.png)
+
+### Option 3 - Style A
+![Logo Option 3](logo-option-3.png)
+
+### Option 4 - Style B
+![Logo Option 4](logo-option-4.png)
+
+---
+
 ## Features
 
 ### 🔑 BYOK - Bring Your Own Key

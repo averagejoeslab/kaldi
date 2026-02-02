@@ -133,6 +133,9 @@ export const mascot = {
 // ============================================================================
 
 export const sym = {
+  // Direct aliases for common use
+  prompt: prompt.default,
+  // Spreads
   ...status,
   ...prompt,
   ...tree,

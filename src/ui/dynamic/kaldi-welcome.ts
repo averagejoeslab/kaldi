@@ -1,14 +1,15 @@
 /**
  * Kaldi Welcome Screen
  *
- * Beautiful dog-themed welcome with all the info.
+ * Beautiful dog-themed welcome with Kaldi Dovington's image.
  */
 
 import { c } from "../theme/colors.js";
 import { mascot } from "../theme/ascii-art.js";
-import { getGreeting, dogFace } from "../theme/dog-messages.js";
+import { getGreeting, dogFace, kaldiIdentity } from "../theme/dog-messages.js";
 import { getPermissionManager, formatMode } from "./permission-modes.js";
 import { box, getTerminalWidth, stripAnsi, center } from "./box.js";
+import { displayKaldiLogo, shouldShowImage } from "../terminal-image.js";
 
 export interface KaldiWelcomeConfig {
   provider: string;
@@ -25,23 +26,32 @@ export function createKaldiWelcome(config: KaldiWelcomeConfig): string {
   const width = Math.min(getTerminalWidth(), 80);
   const lines: string[] = [];
 
+  // Try to display Kaldi's actual image first (in supported terminals)
+  if (shouldShowImage()) {
+    const imageOutput = displayKaldiLogo({ width: "25" });
+    if (imageOutput) {
+      lines.push("");
+      lines.push(center(imageOutput, width));
+    }
+  }
+
   // Top border
   lines.push(c.cream(box.topLeft + box.horizontal.repeat(width - 2) + box.topRight));
 
   // Empty line
   lines.push(formatBoxLine("", width));
 
-  // Title
-  lines.push(formatBoxLine(center(`${c.honey("☕")} ${c.bold(c.cream("K A L D I"))} ${c.honey("☕")}`, width - 4), width));
-  lines.push(formatBoxLine(center(c.dim("Your Loyal Coding Companion"), width - 4), width));
+  // Title - Kaldi Dovington!
+  lines.push(formatBoxLine(center(`${c.honey("☕")} ${c.bold(c.cream("K A L D I   D O V I N G T O N"))} ${c.honey("☕")}`, width - 4), width));
+  lines.push(formatBoxLine(center(c.dim("The Mysterious Boy • Your Loyal Coding Companion"), width - 4), width));
 
   // Empty line
   lines.push(formatBoxLine("", width));
 
-  // Dog ASCII art
+  // Dog ASCII art (fallback if image not supported)
   const dogArt = `
       ╱╲___╱╲
-     ( ◠   ◠ )
+     ( ◠   ◠ )  Mr. Boy
       ╲  ▼  ╱
        ╲──╱
     ╭───┴───╮

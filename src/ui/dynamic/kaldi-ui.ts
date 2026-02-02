@@ -6,7 +6,7 @@
 
 import { c } from "../theme/colors.js";
 import { dogFace, dogEmote, errorMessages, getSuccessMessage } from "../theme/dog-messages.js";
-import { coffeeVerbs, dogVerbs, spinnerConfigs, coffeeFrames } from "../theme/coffee-spinners.js";
+import { coffeeVerbs, kaldiVerbs, coffeeFrames } from "../theme/coffee-spinners.js";
 import {
   getPermissionManager,
   type PermissionMode,
@@ -419,15 +419,15 @@ export class KaldiUI {
    */
   private getVerbForTool(name: string): string {
     const toolVerbs: Record<string, string> = {
-      read_file: dogVerbs.fetching,
-      list_dir: dogVerbs.sniffing,
-      glob: dogVerbs.sniffing,
-      grep: dogVerbs.hunting,
+      read_file: kaldiVerbs.fetching,
+      list_dir: kaldiVerbs.sniffing,
+      glob: kaldiVerbs.sniffing,
+      grep: kaldiVerbs.hunting,
       bash: coffeeVerbs.percolating,
       write_file: coffeeVerbs.roasting,
       edit_file: coffeeVerbs.roasting,
-      web_fetch: dogVerbs.fetching,
-      web_search: dogVerbs.hunting,
+      web_fetch: kaldiVerbs.fetching,
+      web_search: kaldiVerbs.hunting,
     };
 
     return toolVerbs[name] || coffeeVerbs.percolating;

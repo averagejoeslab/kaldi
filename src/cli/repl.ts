@@ -20,7 +20,9 @@ import {
   getPermissionManager,
   printKaldiWelcome,
   printKaldiGoodbye,
+  getCollapsibleOutput,
 } from "../ui/dynamic/index.js";
+import { stripAnsi } from "../ui/enhanced-input.js";
 import type { CLIOptions } from "./types.js";
 
 /**
@@ -53,8 +55,10 @@ export class REPL {
   private options: CLIOptions;
   private ui = getKaldiUI();
   private permissionManager = getPermissionManager();
+  private collapsibleOutput = getCollapsibleOutput();
   private sessionName: string;
   private sessionStartTime = Date.now();
+  private keypressHandler: ((_: string, key: readline.Key) => void) | null = null;
 
   constructor(options: CLIOptions) {
     this.options = options;
@@ -162,6 +166,35 @@ export class REPL {
       terminal: true,
     });
 
+    // Enable keypress events for special key handling
+    if (process.stdin.isTTY) {
+      readline.emitKeypressEvents(process.stdin, this.rl);
+    }
+
+    // Setup keypress handler for Shift+Tab, Ctrl+O, etc.
+    this.keypressHandler = (_: string, key: readline.Key) => {
+      if (!key) return;
+
+      // Shift+Tab - Cycle permission mode
+      if (key.shift && key.name === "tab") {
+        this.handleModeChange();
+        return;
+      }
+
+      // Ctrl+O - Toggle verbose/expand output
+      if (key.ctrl && key.name === "o") {
+        this.handleExpandOutput();
+        return;
+      }
+
+      // Ctrl+L - Clear screen
+      if (key.ctrl && key.name === "l") {
+        this.handleClearScreen();
+        return;
+      }
+    };
+    process.stdin.on("keypress", this.keypressHandler);
+
     // Handle line input
     this.rl.on("line", async (line) => {
       await this.handleInput(line);
@@ -189,10 +222,56 @@ export class REPL {
   }
 
   /**
+   * Handle Shift+Tab to cycle permission modes
+   */
+  private handleModeChange(): void {
+    const newMode = this.permissionManager.cycleMode();
+    const config = this.permissionManager.getConfig();
+
+    // Get current input line
+    const currentLine = (this.rl as any)?.line || "";
+
+    // Clear current line and show mode change
+    process.stdout.write("\r\x1B[K"); // Clear line
+
+    // Show brief mode change notification
+    console.log(`\n${config.icon} ${c.bold("Mode changed:")} ${config.name} - ${c.dim(config.description)}\n`);
+
+    // Redraw prompt with current input
+    this.showPrompt();
+    process.stdout.write(currentLine);
+  }
+
+  /**
+   * Handle Ctrl+O to expand/collapse output
+   */
+  private handleExpandOutput(): void {
+    // Toggle all sections
+    this.collapsibleOutput.expandAll();
+    console.log(c.dim("\n*Output expansion toggled*\n"));
+    this.showPrompt();
+  }
+
+  /**
+   * Handle Ctrl+L to clear screen
+   */
+  private handleClearScreen(): void {
+    process.stdout.write("\x1B[2J\x1B[H"); // Clear screen and move to top
+    this.showPrompt();
+  }
+
+  /**
    * Stop the REPL
    */
   stop(): void {
     this.running = false;
+
+    // Cleanup keypress handler
+    if (this.keypressHandler) {
+      process.stdin.removeListener("keypress", this.keypressHandler);
+      this.keypressHandler = null;
+    }
+
     this.ui.goodbye();
     this.rl?.close();
     process.exit(0);
@@ -208,8 +287,25 @@ export class REPL {
     const mode = this.permissionManager.getMode();
     const config = this.permissionManager.getConfig();
 
-    // Dog-themed prompt
-    process.stdout.write(`${config.icon.split("▸")[0]}${c.honey("❯")} `);
+    // Build the prompt
+    // Extract emoji part (before any ▸) for the mode indicator
+    const modeIcon = config.icon.split("▸")[0];
+    const promptChar = c.honey("❯");
+
+    // Build full prompt with ANSI codes
+    const fullPrompt = `${modeIcon}${promptChar} `;
+
+    // Calculate visible width for readline (strip ANSI codes)
+    const visiblePrompt = stripAnsi(fullPrompt);
+
+    // Set the prompt on readline so it knows the visible width
+    // This prevents backspace corruption
+    if (this.rl) {
+      this.rl.setPrompt(fullPrompt);
+      this.rl.prompt(true);
+    } else {
+      process.stdout.write(fullPrompt);
+    }
   }
 
   /**

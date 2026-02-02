@@ -1,11 +1,11 @@
 /**
  * Kaldi Goodbye Screen
  *
- * Friendly farewell with session info.
+ * Mr. Boy's friendly farewell with session info.
  */
 
 import { c } from "../theme/colors.js";
-import { getGoodbye, dogFace } from "../theme/dog-messages.js";
+import { getGoodbye, dogFace, dogEmote, kaldiIdentity } from "../theme/dog-messages.js";
 
 export interface GoodbyeConfig {
   sessionName?: string;
@@ -15,7 +15,7 @@ export interface GoodbyeConfig {
 }
 
 /**
- * Create the goodbye screen
+ * Create Mr. Boy's goodbye screen
  */
 export function createKaldiGoodbye(config: GoodbyeConfig = {}): string {
   const lines: string[] = [];
@@ -23,7 +23,7 @@ export function createKaldiGoodbye(config: GoodbyeConfig = {}): string {
   lines.push("");
   lines.push("");
 
-  // Goodbye message
+  // Random goodbye message
   lines.push(`  ${getGoodbye()}`);
   lines.push("");
 
@@ -47,23 +47,17 @@ export function createKaldiGoodbye(config: GoodbyeConfig = {}): string {
 
   lines.push("");
 
-  // Sleeping dog art
-  const sleepingDog = `
-         ╱╲___╱╲
-        ( ◠   ◠ )  ${c.dim("*yawn*")}
-         ╲  ▼  ╱
-          ╲──╯     ${c.cream("Good boy says goodbye!")}
-       ╭───┴───╮
-      ╱  zzZ    ╲
-     ☕ ☕ ☕ ☕ ☕
-  `.split("\n");
+  // Sleeping Kaldi art
+  lines.push(c.cream("         ╱╲___╱╲"));
+  lines.push(c.cream("        ( ◠   ◠ )  ") + c.dim(dogEmote.yawn));
+  lines.push(c.cream("         ╲  ▼  ╱"));
+  lines.push(c.cream("          ╲──╯     ") + c.honey("Mr. Boy signing off!"));
+  lines.push(c.cream("       ╭───┴───╮"));
+  lines.push(c.cream("      ╱  zzZ    ╲  ") + c.dim("*curls up in dog bed*"));
+  lines.push(c.cream("     ☕ ☕ ☕ ☕ ☕"));
 
-  for (const line of sleepingDog) {
-    if (line.trim()) {
-      lines.push(c.cream(line));
-    }
-  }
-
+  lines.push("");
+  lines.push(c.dim(`  ${kaldiIdentity.fullName} will be here when you need him!`));
   lines.push("");
 
   return lines.join("\n");
@@ -93,7 +87,7 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Print the goodbye screen
+ * Print Mr. Boy's goodbye screen
  */
 export function printKaldiGoodbye(config: GoodbyeConfig = {}): void {
   console.log(createKaldiGoodbye(config));

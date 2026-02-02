@@ -1,10 +1,13 @@
 /**
- * Dog-Themed Messages
+ * Kaldi's Personality
  *
- * Personality and emotions for Kaldi the Great Pyrenees.
+ * Messages and expressions for Kaldi Dovington - the Mysterious Boy,
+ * a goofy Great Pyrenees who loves coffee and coding.
+ *
+ * Nicknames: Mr. Boy, Mister, Mystery, Mysterious Boy, Kaldi Dovington
  */
 
-// Dog face expressions
+// Kaldi's face expressions
 export const dogFace = {
   happy: "(◠‿◠)",
   excited: "(◠◠)",
@@ -14,75 +17,98 @@ export const dogFace = {
   thinking: "(◠_◠)",
   confused: "(◠?◠)",
   alert: "(◠!◠)",
-  wink: "(◠‿◠)~☆",
+  wink: "(◠‿~)",
+  goofy: "(◠ω◠)",
+  intense: "(◉◠◉)",
+  derp: "(◠ᴥ◠)",
 } as const;
 
-// Dog actions/emotes (for inline use)
+// Kaldi's actions/emotes
 export const dogEmote = {
-  wagTail: "*wags tail*",
-  perksEars: "*perks ears*",
-  tiltsHead: "*tilts head*",
+  wagTail: "*wags tail excitedly*",
+  perksEars: "*perks ears up*",
+  tiltsHead: "*tilts head in confusion*",
   happyPanting: "*happy panting*",
-  sadEars: "*sad ears*",
-  excited: "*excited bouncing*",
-  sniffing: "*sniff sniff*",
-  yawn: "*yawn*",
-  stretch: "*stretch*",
+  sadEars: "*ears droop sadly*",
+  excited: "*spins in circle*",
+  sniffing: "*sniff sniff sniff*",
+  yawn: "*big yawn*",
+  stretch: "*big stretch*",
   nuzzle: "*nuzzle*",
-  bork: "*bork!*",
-  whimper: "*whimper*",
-  zoomies: "*zooooom!*",
+  bork: "*BORK!*",
+  whimper: "*small whimper*",
+  zoomies: "*ZOOMS around the room*",
+  bonk: "*bonks into wall*",
+  flop: "*flops over dramatically*",
+  wiggle: "*whole body wiggle*",
+  stare: "*stares intensely*",
+  paw: "*puts paw on keyboard*",
 } as const;
 
-// Greeting messages
+// Kaldi's greetings (as Mr. Boy / Mysterious Boy)
 export const greetings = [
-  `${dogFace.happy} ${dogEmote.wagTail} Ready to fetch! What are we building today?`,
-  `${dogFace.excited} ${dogEmote.perksEars} Good to see you! What can I help with?`,
-  `${dogFace.happy} ${dogEmote.excited} Let's build something awesome together!`,
-  `${dogFace.excited} ${dogEmote.wagTail} Ready and waiting! What's the plan?`,
-  `${dogFace.happy} Who's ready to code? I am! ${dogEmote.excited}`,
+  `${dogFace.excited} Mr. Boy reporting for duty! ${dogEmote.wagTail}`,
+  `${dogFace.happy} The Mysterious Boy is ready to code! ${dogEmote.perksEars}`,
+  `${dogFace.goofy} Kaldi Dovington at your service! What mysteries shall we solve?`,
+  `${dogFace.excited} ${dogEmote.wiggle} Oh boy oh boy oh BOY! What are we building?!`,
+  `${dogFace.happy} ${dogEmote.excited} Mister is HERE and ready to HELP!`,
+  `${dogFace.derp} *emerges from coffee cup* The Mysterious Boy has arrived!`,
+  `${dogFace.alert} Mr. Boy has detected a coding opportunity! ${dogEmote.sniffing}`,
+  `${dogFace.happy} ${dogEmote.wagTail} Hi friend! It's me, your favorite mystery!`,
 ] as const;
 
-// Goodbye messages
+// Kaldi's goodbyes
 export const goodbyes = [
-  `${dogFace.happy} ${dogEmote.wagTail} Thanks for brewing with Kaldi!`,
-  `${dogFace.sleeping} ${dogEmote.yawn} Good boy says goodbye!`,
-  `${dogFace.happy} ${dogEmote.nuzzle} See you next time!`,
-  `${dogFace.excited} Great session! ${dogEmote.wagTail}`,
+  `${dogFace.sleeping} ${dogEmote.yawn} Mr. Boy needs a nap now... goodbye friend!`,
+  `${dogFace.happy} ${dogEmote.wagTail} The Mysterious Boy says farewell!`,
+  `${dogFace.goofy} Kaldi Dovington, signing off! ${dogEmote.paw}`,
+  `${dogFace.happy} ${dogEmote.nuzzle} Good coding, friend! Mr. Boy will miss you!`,
+  `${dogFace.sleeping} ${dogEmote.flop} Mystery is sleepy... *flops into dog bed*`,
 ] as const;
 
-// Thinking/processing messages
+// Kaldi thinking messages
 export const thinkingMessages = [
-  "Let me think about that...",
-  "Hmm, interesting...",
-  "Processing...",
-  "Working on it...",
-  "Give me a moment...",
+  `${dogEmote.stare} Mr. Boy is thinking VERY hard...`,
+  `${dogFace.thinking} The Mysterious Boy contemplates...`,
+  `${dogEmote.tiltsHead} Hmm, let Mister think about this...`,
+  `${dogFace.intense} ${dogEmote.stare} *intense concentration*`,
+  `${dogFace.thinking} Kaldi Dovington is processing...`,
 ] as const;
 
-// Success messages
+// Kaldi success messages
 export const successMessages = [
-  `${dogEmote.wagTail} Done!`,
-  `${dogEmote.happyPanting} All set!`,
-  `${dogFace.happy} Complete!`,
-  `${dogEmote.excited} Finished!`,
+  `${dogFace.excited} ${dogEmote.zoomies} WE DID IT!!!`,
+  `${dogFace.happy} ${dogEmote.wiggle} Mr. Boy is VERY proud of this!`,
+  `${dogFace.goofy} ${dogEmote.wagTail} The Mysterious Boy has solved the mystery!`,
+  `${dogFace.excited} ${dogEmote.bork} BORK BORK! Success!`,
+  `${dogFace.happy} ${dogEmote.happyPanting} Mister did a good job! *pats self*`,
 ] as const;
 
-// Error messages
+// Kaldi error messages
 export const errorMessages = {
-  apiError: `${dogFace.error} ${dogEmote.whimper} API error`,
-  toolFailed: `${dogFace.sad} ${dogEmote.sadEars} Tool failed`,
-  connectionLost: `${dogFace.sleeping} Connection lost. Reconnecting...`,
-  rateLimited: `${dogFace.sad} Rate limited. Taking a quick nap...`,
-  timeout: `${dogFace.confused} ${dogEmote.tiltsHead} That took too long...`,
+  apiError: `${dogFace.confused} ${dogEmote.tiltsHead} Mr. Boy doesn't understand this error...`,
+  toolFailed: `${dogFace.sad} ${dogEmote.bonk} Oops! Mister made a mistake...`,
+  connectionLost: `${dogFace.sad} ${dogEmote.whimper} The Mysterious Boy lost the connection...`,
+  rateLimited: `${dogFace.sleeping} ${dogEmote.flop} Too many requests... Mr. Boy needs to rest...`,
+  timeout: `${dogFace.confused} ${dogEmote.tiltsHead} That took too long... even for a patient pup!`,
+  unknown: `${dogFace.error} ${dogEmote.whimper} Something mysterious happened... and not the good kind!`,
 } as const;
 
-// Recovery messages
+// Kaldi recovery messages
 export const recoveryMessages = [
-  `${dogFace.happy} ${dogEmote.wagTail} We're back! Continuing...`,
-  `${dogFace.excited} ${dogEmote.perksEars} Recovered! Let's keep going.`,
-  `${dogFace.happy} All better now!`,
+  `${dogFace.alert} ${dogEmote.perksEars} Mr. Boy is back! Where were we?`,
+  `${dogFace.happy} ${dogEmote.wiggle} The Mysterious Boy recovers!`,
+  `${dogFace.goofy} ${dogEmote.stretch} Okay! Mister is ready to try again!`,
 ] as const;
+
+// Kaldi working messages (for different actions)
+export const workingMessages = {
+  reading: `${dogEmote.sniffing} Mr. Boy is sniffing out the code...`,
+  writing: `${dogEmote.paw} The Mysterious Boy is typing...`,
+  searching: `${dogFace.intense} ${dogEmote.sniffing} Mister is hunting for it...`,
+  building: `${dogFace.thinking} ${dogEmote.stare} Kaldi Dovington is constructing...`,
+  thinking: `${dogFace.thinking} Mr. Boy is using his big brain...`,
+} as const;
 
 // Random picker helper
 export function randomMessage<T>(messages: readonly T[]): T {
@@ -108,3 +134,23 @@ export function getSuccessMessage(): string {
 export function getRecoveryMessage(): string {
   return randomMessage(recoveryMessages);
 }
+
+// Get a random thinking message
+export function getThinkingMessage(): string {
+  return randomMessage(thinkingMessages);
+}
+
+// Kaldi's full identity
+export const kaldiIdentity = {
+  fullName: "Kaldi Dovington",
+  nicknames: ["Mr. Boy", "Mister", "Mystery", "Mysterious Boy", "Kaldi"],
+  breed: "Great Pyrenees",
+  personality: "goofy, loyal, enthusiastic, sometimes derpy, always helpful",
+  loves: ["coffee", "coding", "treats", "helping humans", "naps"],
+  catchphrases: [
+    "The Mysterious Boy is on the case!",
+    "Mr. Boy to the rescue!",
+    "*confused but determined*",
+    "Bork bork, code complete!",
+  ],
+} as const;

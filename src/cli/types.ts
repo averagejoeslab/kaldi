@@ -5,15 +5,24 @@
  */
 
 /**
+ * CLI subcommands
+ */
+export type CLICommand = "beans" | "doctor" | "roast" | "refill" | null;
+
+/**
  * CLI options from command line arguments
  */
 export interface CLIOptions {
+  /** Subcommand */
+  command?: CLICommand;
   /** Working directory */
   cwd?: string;
   /** Provider to use */
   provider?: string;
   /** Model to use */
   model?: string;
+  /** API key */
+  apiKey?: string;
   /** Session ID to resume */
   resume?: string;
   /** Enable plan mode */
@@ -26,6 +35,8 @@ export interface CLIOptions {
   help?: boolean;
   /** Enable verbose/debug output */
   verbose?: boolean;
+  /** List configs */
+  list?: boolean;
 }
 
 /**

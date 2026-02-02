@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Kaldi - Your Loyal AI Coding Companion
  *
@@ -7,6 +6,7 @@
  */
 
 import { parseArgs, getHelpText, REPL } from "./cli/index.js";
+import { handleBeans, handleDoctor, handleRefill, handleRoast } from "./cli/commands.js";
 import { initializeProviders } from "./providers/index.js";
 import { initializeMCP } from "./mcp/index.js";
 import { c } from "./ui/theme/colors.js";
@@ -30,6 +30,24 @@ async function main(): Promise<void> {
   if (options.version) {
     console.log(`Kaldi v${VERSION}`);
     process.exit(0);
+  }
+
+  // Handle subcommands
+  if (options.command) {
+    switch (options.command) {
+      case "beans":
+        await handleBeans(options);
+        process.exit(0);
+      case "doctor":
+        await handleDoctor(options);
+        process.exit(0);
+      case "refill":
+        await handleRefill(options);
+        process.exit(0);
+      case "roast":
+        await handleRoast(options);
+        process.exit(0);
+    }
   }
 
   try {

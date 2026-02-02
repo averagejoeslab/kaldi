@@ -32,6 +32,8 @@ import {
   costCommand,
   versionCommand,
   exitCommand,
+  modeCommand,
+  contextCommand,
 } from "./utility.js";
 import { toolsCommand, permissionsCommand, mcpCommand } from "./tools.js";
 import {
@@ -92,6 +94,8 @@ export function initializeCommands(): void {
   registerCommand(copyCommand);
   registerCommand(costCommand);
   registerCommand(versionCommand);
+  registerCommand(modeCommand);
+  registerCommand(contextCommand);
 
   // Tools commands
   registerCommand(toolsCommand);

@@ -11,8 +11,15 @@ import { join } from "path";
 import type { Command } from "./types.js";
 import { c } from "../ui/theme/colors.js";
 import { sym } from "../ui/theme/symbols.js";
+import { dogFace } from "../ui/theme/dog-messages.js";
 import { getConfig } from "../config/store.js";
 import { hasProjectContext } from "../context/project/index.js";
+import {
+  getPermissionManager,
+  permissionModes,
+  formatModeWithDescription,
+  type PermissionMode,
+} from "../ui/dynamic/permission-modes.js";
 
 export const doctorCommand: Command = {
   name: "doctor",
@@ -272,8 +279,118 @@ export const exitCommand: Command = {
   description: "Exit Kaldi",
   handler: () => {
     return {
-      output: c.cream("\n  Thanks for brewing with Kaldi! See you next time!\n"),
+      output: c.cream(`\n  ${dogFace.happy} Thanks for brewing with Kaldi! See you next time!\n`),
       exit: true,
     };
+  },
+};
+
+export const modeCommand: Command = {
+  name: "mode",
+  aliases: ["permission", "perms"],
+  description: "View or change permission mode",
+  usage: "/mode [goodboy|offleash|sniff|zoomies]",
+  handler: (args, context) => {
+    const manager = getPermissionManager();
+    const currentMode = manager.getMode();
+
+    // If no args, show current mode and available modes
+    if (args.length === 0) {
+      const lines = [
+        "",
+        c.accent("  🐕 Permission Modes"),
+        "",
+        c.dim("  Current mode:"),
+        `    ${formatModeWithDescription(currentMode)}`,
+        "",
+        c.dim("  Available modes:"),
+      ];
+
+      const modeEntries: Array<[string, PermissionMode]> = [
+        ["goodboy", "goodBoy"],
+        ["offleash", "offLeash"],
+        ["sniff", "sniffAround"],
+        ["zoomies", "zoomies"],
+      ];
+
+      for (const [cmdName, mode] of modeEntries) {
+        const config = permissionModes[mode];
+        const isCurrent = mode === currentMode;
+        const prefix = isCurrent ? c.honey("→") : " ";
+        const name = isCurrent ? c.honey(config.name) : config.name;
+        lines.push(`  ${prefix} ${config.icon} ${name.padEnd(15)} ${c.dim(config.description)}`);
+        lines.push(`      ${c.dim(`/mode ${cmdName}`)}`);
+      }
+
+      lines.push("");
+      lines.push(c.dim("  Tip: Use Shift+Tab to cycle through modes quickly!"));
+      lines.push("");
+
+      return { output: lines.join("\n") };
+    }
+
+    // Parse mode argument
+    const modeArg = args[0].toLowerCase().replace(/[^a-z]/g, "");
+    const modeMap: Record<string, PermissionMode> = {
+      goodboy: "goodBoy",
+      good: "goodBoy",
+      offleash: "offLeash",
+      off: "offLeash",
+      leash: "offLeash",
+      sniff: "sniffAround",
+      sniffaround: "sniffAround",
+      plan: "sniffAround",
+      zoomies: "zoomies",
+      zoom: "zoomies",
+      yolo: "zoomies",
+      auto: "zoomies",
+    };
+
+    const newMode = modeMap[modeArg];
+    if (!newMode) {
+      return {
+        error: `Unknown mode: ${args[0]}. Try: goodboy, offleash, sniff, or zoomies`,
+      };
+    }
+
+    manager.setMode(newMode);
+    const config = permissionModes[newMode];
+
+    return {
+      output: `\n${config.icon} ${c.honey("Mode changed:")} ${config.name} - ${c.dim(config.description)}\n`,
+    };
+  },
+};
+
+export const contextCommand: Command = {
+  name: "context",
+  aliases: ["ctx"],
+  description: "Show context window usage",
+  handler: (args, context) => {
+    // Placeholder - would show actual context usage
+    const maxContext = 200000;
+    const usedContext = 0; // Would come from actual tracking
+    const percentage = (usedContext / maxContext) * 100;
+
+    const barWidth = 40;
+    const filledWidth = Math.round((usedContext / maxContext) * barWidth);
+    const emptyWidth = barWidth - filledWidth;
+    const bar = c.honey("█".repeat(filledWidth)) + c.dim("░".repeat(emptyWidth));
+
+    const lines = [
+      "",
+      c.accent("  📊 Context Window"),
+      "",
+      `  ${bar} ${percentage.toFixed(1)}%`,
+      "",
+      `  ${c.dim("Used:")}     ${usedContext.toLocaleString().padStart(10)} tokens`,
+      `  ${c.dim("Available:")} ${(maxContext - usedContext).toLocaleString().padStart(10)} tokens`,
+      `  ${c.dim("Maximum:")}   ${maxContext.toLocaleString().padStart(10)} tokens`,
+      "",
+      c.dim("  Tip: Use /compact to free up context space."),
+      "",
+    ];
+
+    return { output: lines.join("\n") };
   },
 };

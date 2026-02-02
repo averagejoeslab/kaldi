@@ -16,6 +16,9 @@ export * from "./components/index.js";
 // New input handling
 export * from "./input/index.js";
 
+// Dynamic UI components (spinners, thinking display, etc.)
+export * from "./dynamic/index.js";
+
 // Desktop notifications
 export { notify, notifyComplete, notifyError } from "./notifications.js";
 

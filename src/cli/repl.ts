@@ -14,8 +14,13 @@ import { buildSystemPrompt } from "../context/builder.js";
 import { getSkillsRegistry } from "../skills/index.js";
 import { c } from "../ui/theme/colors.js";
 import { sym } from "../ui/theme/symbols.js";
-import { printWelcome, printGoodbye } from "../ui/components/welcome.js";
-import { createSpinner } from "../ui/components/spinner.js";
+import { printGoodbye } from "../ui/components/welcome.js";
+import {
+  printWelcomeScreen,
+  getToolDisplay,
+  createAnimatedSpinner,
+  spinnerFrames,
+} from "../ui/dynamic/index.js";
 import type { CLIOptions } from "./types.js";
 
 /**
@@ -28,6 +33,9 @@ export class REPL {
   private running = false;
   private processing = false;
   private options: CLIOptions;
+  private tokenUsage = { input: 0, output: 0 };
+  private toolDisplay = getToolDisplay();
+  private currentSpinner: ReturnType<typeof createAnimatedSpinner> | null = null;
 
   constructor(options: CLIOptions) {
     this.options = options;
@@ -71,25 +79,64 @@ export class REPL {
       requirePermission: true,
       callbacks: {
         onText: (text) => {
+          // Stop any spinner when text starts
+          if (this.currentSpinner) {
+            this.currentSpinner.stop();
+            this.currentSpinner = null;
+          }
           process.stdout.write(text);
         },
+        onThinking: (text) => {
+          // Update spinner with thinking indicator
+          if (this.currentSpinner && text) {
+            const preview = text.length > 50 ? text.slice(0, 47) + "..." : text;
+            this.currentSpinner.update(`Thinking... ${c.dim(preview)}`);
+          }
+        },
         onToolUse: (name, args) => {
-          console.log(c.dim(`\n  ${sym.pending} Using tool: ${name}`));
+          // Stop spinner when starting tool
+          if (this.currentSpinner) {
+            this.currentSpinner.stop();
+            this.currentSpinner = null;
+          }
+
+          // Start tool display
+          this.toolDisplay.start(name, args as Record<string, unknown>);
+
+          // Also show in console for clarity
+          console.log("");
+          console.log(`${c.honey("⚙")} ${c.bold(name)}`);
+
           // Show command for bash tool
           if (name === "bash" && args.command) {
-            console.log(c.dim(`    $ ${String(args.command).slice(0, 100)}`));
+            const cmd = String(args.command);
+            const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
+            console.log(c.dim(`  $ ${preview}`));
+          } else if (name === "read_file" && args.path) {
+            console.log(c.dim(`  ${args.path}`));
+          } else if (name === "edit_file" && args.path) {
+            console.log(c.dim(`  ${args.path}`));
+          } else if (name === "write_file" && args.path) {
+            console.log(c.dim(`  ${args.path}`));
           }
         },
         onToolResult: (name, result, isError) => {
+          // Complete tool display
+          this.toolDisplay.complete(!isError, result);
+
           if (isError) {
-            console.log(c.error(`  ${sym.error} Tool error: ${result.slice(0, 200)}`));
-          } else if (result && this.options.verbose) {
-            // Only show result in verbose mode (can be noisy)
-            const preview = result.slice(0, 500);
-            console.log(c.dim(`  ${sym.success} Result: ${preview}${result.length > 500 ? "..." : ""}`));
+            console.log(`${c.error("✗")} ${c.error("Error")}`);
+            if (this.options.verbose) {
+              console.log(c.dim(`  ${result.slice(0, 300)}`));
+            }
           } else {
-            console.log(c.success(`  ${sym.success} Done`));
+            console.log(`${c.success("✓")} ${c.dim("Done")}`);
+            if (this.options.verbose && result) {
+              const preview = result.slice(0, 200);
+              console.log(c.dim(`  ${preview}${result.length > 200 ? "..." : ""}`));
+            }
           }
+          console.log("");
         },
         onPermissionRequest: async (request) => {
           // For now, auto-approve read operations
@@ -101,7 +148,12 @@ export class REPL {
           return true;
         },
         onError: (error) => {
-          console.error(c.error(`\n  ${sym.error} ${error.message}`));
+          // Stop any active spinner
+          if (this.currentSpinner) {
+            this.currentSpinner.stop();
+            this.currentSpinner = null;
+          }
+          console.error(c.error(`\n${sym.error} ${error.message}`));
         },
       },
     });
@@ -122,10 +174,12 @@ export class REPL {
       process.exit(1);
     }
 
-    // Print welcome message
-    printWelcome({
+    // Print welcome screen
+    printWelcomeScreen({
       provider: this.context.provider,
       model: this.context.model,
+      workingDir: this.context.cwd,
+      version: "0.1.0",
     });
 
     // Create readline interface
@@ -228,19 +282,54 @@ export class REPL {
 
     console.log(""); // New line before response
 
+    // Start thinking spinner (only use spinner, not both)
+    this.currentSpinner = createAnimatedSpinner({
+      frames: spinnerFrames.dots,
+      color: c.honey,
+    });
+    this.currentSpinner.start("Thinking...");
+
     try {
       const result = await this.agent.run(message);
+
+      // Stop spinner
+      if (this.currentSpinner) {
+        this.currentSpinner.stop();
+        this.currentSpinner = null;
+      }
 
       // Response is already streamed via callbacks
       console.log(""); // New line after response
 
-      // Show usage if verbose
-      if (this.options.verbose && result.usage) {
-        console.log(c.dim(`  Tokens: ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`));
+      // Track token usage
+      if (result.usage) {
+        this.tokenUsage.input += result.usage.inputTokens;
+        this.tokenUsage.output += result.usage.outputTokens;
+      }
+
+      // Show usage summary
+      if (result.usage) {
+        const input = this.formatTokens(result.usage.inputTokens);
+        const output = this.formatTokens(result.usage.outputTokens);
+        console.log(c.dim(`  ${c.dim("↑")}${input} ${c.dim("↓")}${output}`));
       }
     } catch (error) {
+      // Stop spinner on error
+      if (this.currentSpinner) {
+        this.currentSpinner.stop();
+        this.currentSpinner = null;
+      }
       throw error;
     }
+  }
+
+  /**
+   * Format token count
+   */
+  private formatTokens(count: number): string {
+    if (count < 1000) return String(count);
+    if (count < 1000000) return `${(count / 1000).toFixed(1)}K`;
+    return `${(count / 1000000).toFixed(2)}M`;
   }
 
   /**
@@ -254,6 +343,9 @@ export class REPL {
       console.error(c.dim("\nMake sure you've configured your provider: kaldi beans -p anthropic -k YOUR_KEY\n"));
       process.exit(1);
     }
+
+    // Show compact header for one-shot mode
+    console.log(`\n${c.honey("☕")} ${c.bold(c.cream("Kaldi"))} ${c.dim(`• ${this.context.provider}/${this.context.model}`)}\n`);
 
     await this.runAgent(prompt);
   }

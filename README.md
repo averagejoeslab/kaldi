@@ -1,26 +1,19 @@
-# ☕ Kaldi
+<p align="center">
+  <img src="assets/logo-option-4.png" alt="Kaldi" width="300">
+</p>
 
-**Your loyal coding companion.**
+<h1 align="center">☕ Kaldi</h1>
 
-Kaldi is a BYOK (Bring Your Own Key) agentic coding CLI. Like a good cup of coffee and a loyal dog, Kaldi is always there to help you code.
+<p align="center"><strong>Your loyal coding companion.</strong></p>
 
-Named after the Ethiopian goatherd who discovered coffee, and inspired by man's best friend.
+<p align="center">
+Kaldi is a BYOK (Bring Your Own Key) agentic coding CLI.<br>
+Like a good cup of coffee and a loyal dog, Kaldi is always there to help you code.
+</p>
 
----
-
-## Logo Options (Pick One)
-
-### Option 1 - Simple
-![Logo Option 1](logo-option-1.png)
-
-### Option 2 - Cartoon
-![Logo Option 2](logo-option-2.png)
-
-### Option 3 - Style A
-![Logo Option 3](logo-option-3.png)
-
-### Option 4 - Style B
-![Logo Option 4](logo-option-4.png)
+<p align="center">
+<em>Named after the Ethiopian goatherd who discovered coffee, and inspired by man's best friend.</em>
+</p>
 
 ---
 

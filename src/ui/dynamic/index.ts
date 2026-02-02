@@ -14,21 +14,6 @@ export * from "./box.js";
 // Animated spinners
 export * from "./spinner.js";
 
-// Thinking display
-export * from "./thinking.js";
-
-// Tool display
-export * from "./tool-display.js";
-
-// Status bar (legacy)
-export * from "./status-bar.js";
-
-// Welcome screen (legacy)
-export * from "./welcome.js";
-
-// Live display
-export * from "./live-display.js";
-
 // Permission modes (dog-themed)
 export * from "./permission-modes.js";
 

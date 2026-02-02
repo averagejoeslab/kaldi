@@ -7,14 +7,8 @@
 // Theme (single source of truth for colors)
 export * from "./theme/index.js";
 
-// New format functions
+// Format functions
 export * from "./format/index.js";
-
-// New components
-export * from "./components/index.js";
-
-// New input handling
-export * from "./input/index.js";
 
 // Dynamic UI components (spinners, thinking display, etc.)
 export * from "./dynamic/index.js";
@@ -22,31 +16,13 @@ export * from "./dynamic/index.js";
 // Desktop notifications
 export { notify, notifyComplete, notifyError } from "./notifications.js";
 
-// Legacy exports for backwards compatibility
-export * from "./diff.js";
-export {
-  KaldiSpinner,
-  createSpinner as createLegacySpinner,
-  type SpinnerOptions as LegacySpinnerOptions,
-} from "./spinner.js";
-export * from "./autocomplete.js";
-export {
-  StatusManager,
-  status,
-  startToolStatus,
-  getThinkingMessage,
-  getReadingMessage,
-  getSearchingMessage,
-  getRunningMessage,
-  getWritingMessage,
-  getCompletionMessage,
-  formatDuration as formatDurationLegacy,
-} from "./status.js";
+// Core exports
 export * from "./clipboard.js";
 export * from "./terminal.js";
-export * from "./welcome.js";
 export * from "./tool-tree.js";
 export * from "./statusline.js";
+export * from "./enhanced-input.js";
+export * from "./keyboard.js";
 
 // Thinking display
 export {
@@ -115,7 +91,7 @@ export {
   type MultilineState,
 } from "./multiline.js";
 
-// Token display (legacy)
+// Token display
 export {
   TokenCounter,
   getTokenCounter,
@@ -134,7 +110,7 @@ export {
   type ContextWindow,
 } from "./tokens.js";
 
-// Legacy notifications
+// Notifications
 export {
   NotificationSender,
   getNotificationSender,

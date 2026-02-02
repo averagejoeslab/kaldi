@@ -17,7 +17,6 @@ import { sym } from "../ui/theme/symbols.js";
 import { printGoodbye } from "../ui/components/welcome.js";
 import {
   printWelcomeScreen,
-  getToolDisplay,
   createAnimatedSpinner,
   spinnerFrames,
 } from "../ui/dynamic/index.js";
@@ -34,8 +33,8 @@ export class REPL {
   private processing = false;
   private options: CLIOptions;
   private tokenUsage = { input: 0, output: 0 };
-  private toolDisplay = getToolDisplay();
   private currentSpinner: ReturnType<typeof createAnimatedSpinner> | null = null;
+  private toolStartTime = 0;
 
   constructor(options: CLIOptions) {
     this.options = options;
@@ -100,40 +99,54 @@ export class REPL {
             this.currentSpinner = null;
           }
 
-          // Start tool display
-          this.toolDisplay.start(name, args as Record<string, unknown>);
+          // Track timing
+          this.toolStartTime = Date.now();
 
-          // Also show in console for clarity
+          // Show tool being used
           console.log("");
           console.log(`${c.honey("⚙")} ${c.bold(name)}`);
 
-          // Show command for bash tool
+          // Show relevant info based on tool type
           if (name === "bash" && args.command) {
             const cmd = String(args.command);
             const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
             console.log(c.dim(`  $ ${preview}`));
           } else if (name === "read_file" && args.path) {
-            console.log(c.dim(`  ${args.path}`));
+            console.log(c.dim(`  📄 ${args.path}`));
           } else if (name === "edit_file" && args.path) {
-            console.log(c.dim(`  ${args.path}`));
+            console.log(c.dim(`  ✏️  ${args.path}`));
           } else if (name === "write_file" && args.path) {
-            console.log(c.dim(`  ${args.path}`));
+            console.log(c.dim(`  📝 ${args.path}`));
+          } else if (name === "list_dir" && args.path) {
+            console.log(c.dim(`  📁 ${args.path}`));
+          } else if (name === "glob" && args.pattern) {
+            console.log(c.dim(`  🔍 ${args.pattern}`));
+          } else if (name === "grep" && args.pattern) {
+            console.log(c.dim(`  🔎 ${args.pattern}`));
           }
         },
         onToolResult: (name, result, isError) => {
-          // Complete tool display
-          this.toolDisplay.complete(!isError, result);
+          // Calculate elapsed time
+          const elapsed = Date.now() - this.toolStartTime;
+          const timing = this.formatDuration(elapsed);
 
           if (isError) {
-            console.log(`${c.error("✗")} ${c.error("Error")}`);
-            if (this.options.verbose) {
-              console.log(c.dim(`  ${result.slice(0, 300)}`));
-            }
+            console.log(`${c.error("✗")} ${c.dim(timing)}`);
+            // Show error details (not just in verbose mode)
+            const errorPreview = result.slice(0, 200);
+            console.log(c.error(`  ${errorPreview}${result.length > 200 ? "..." : ""}`));
           } else {
-            console.log(`${c.success("✓")} ${c.dim("Done")}`);
+            console.log(`${c.success("✓")} ${c.dim(timing)}`);
+            // Only show result preview in verbose mode
             if (this.options.verbose && result) {
-              const preview = result.slice(0, 200);
-              console.log(c.dim(`  ${preview}${result.length > 200 ? "..." : ""}`));
+              const lines = result.split("\n").slice(0, 3);
+              for (const line of lines) {
+                const preview = line.length > 80 ? line.slice(0, 77) + "..." : line;
+                console.log(c.dim(`  ${preview}`));
+              }
+              if (result.split("\n").length > 3) {
+                console.log(c.dim(`  ... (${result.split("\n").length - 3} more lines)`));
+              }
             }
           }
           console.log("");
@@ -330,6 +343,15 @@ export class REPL {
     if (count < 1000) return String(count);
     if (count < 1000000) return `${(count / 1000).toFixed(1)}K`;
     return `${(count / 1000000).toFixed(2)}M`;
+  }
+
+  /**
+   * Format duration in human-readable form
+   */
+  private formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
   }
 
   /**

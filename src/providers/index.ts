@@ -57,20 +57,22 @@ export function getProvider(name: string, config?: ProvidersConfig): Provider {
   return provider;
 }
 
-export function initializeProviders(config: ProvidersConfig): void {
+export function initializeProviders(config?: ProvidersConfig): void {
   providers.clear();
 
-  if (config.anthropic?.apiKey) {
-    providers.set("anthropic", new AnthropicProvider(config.anthropic));
+  const cfg = config || {};
+
+  if (cfg.anthropic?.apiKey) {
+    providers.set("anthropic", new AnthropicProvider(cfg.anthropic));
   }
-  if (config.openai?.apiKey) {
-    providers.set("openai", new OpenAIProvider(config.openai));
+  if (cfg.openai?.apiKey) {
+    providers.set("openai", new OpenAIProvider(cfg.openai));
   }
-  if (config.openrouter?.apiKey) {
-    providers.set("openrouter", new OpenRouterProvider(config.openrouter));
+  if (cfg.openrouter?.apiKey) {
+    providers.set("openrouter", new OpenRouterProvider(cfg.openrouter));
   }
   // Ollama doesn't need API key
-  providers.set("ollama", new OllamaProvider(config.ollama));
+  providers.set("ollama", new OllamaProvider(cfg.ollama || {}));
 }
 
 export function getConfiguredProviders(): string[] {

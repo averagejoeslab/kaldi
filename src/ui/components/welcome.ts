@@ -85,3 +85,19 @@ export function formatPrompt(mode: "safe" | "auto" | "plan" = "safe"): string {
 
   return colors[mode](symbols[mode]) + " ";
 }
+
+/**
+ * Print the welcome screen to stdout
+ */
+export function printWelcome(options: WelcomeOptions = {}): void {
+  console.log(formatWelcome(options));
+}
+
+/**
+ * Print goodbye message
+ */
+export function printGoodbye(): void {
+  console.log("");
+  console.log(c.cream("  Thanks for brewing with Kaldi! See you next time!"));
+  console.log("");
+}

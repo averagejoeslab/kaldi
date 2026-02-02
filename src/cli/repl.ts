@@ -74,11 +74,26 @@ export class REPL {
           process.stdout.write(text);
         },
         onToolUse: (name, args) => {
-          console.log(c.dim(`\n  Using tool: ${name}`));
+          console.log(c.dim(`\n  ${sym.pending} Using tool: ${name}`));
+          // Show command for bash tool
+          if (name === "bash" && args.command) {
+            console.log(c.dim(`    $ ${String(args.command).slice(0, 100)}`));
+          }
+        },
+        onToolResult: (name, result, isError) => {
+          if (isError) {
+            console.log(c.error(`  ${sym.error} Tool error: ${result.slice(0, 200)}`));
+          } else if (result && this.options.verbose) {
+            // Only show result in verbose mode (can be noisy)
+            const preview = result.slice(0, 500);
+            console.log(c.dim(`  ${sym.success} Result: ${preview}${result.length > 500 ? "..." : ""}`));
+          } else {
+            console.log(c.success(`  ${sym.success} Done`));
+          }
         },
         onPermissionRequest: async (request) => {
           // For now, auto-approve read operations
-          if (["read_file", "glob", "grep", "list_dir"].includes(request.tool)) {
+          if (["read_file", "glob", "grep", "list_dir", "web_fetch"].includes(request.tool)) {
             return true;
           }
           // TODO: Implement proper permission prompt

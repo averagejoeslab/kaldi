@@ -152,7 +152,7 @@ install_kaldi() {
   info "Creating launcher..."
   cat > "$BIN_DIR/kaldi" << EOF
 #!/usr/bin/env bash
-exec node "$INSTALL_DIR/dist/cli.js" "\$@"
+exec node "$INSTALL_DIR/dist/main.js" "\$@"
 EOF
   chmod +x "$BIN_DIR/kaldi"
   success "Launcher created at $BIN_DIR/kaldi"

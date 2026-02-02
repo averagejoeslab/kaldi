@@ -1116,10 +1116,10 @@ async function runSession(resumeSession?: Session) {
     process.exit(0);
   });
 
-  const showPrompt = () => {
+  const buildPrompt = (): string => {
     const imageBadges = formatImageBadges(state.pendingImages.length);
     const modeIndicator = getModeIndicator();
-    process.stdout.write(`${getPromptSymbol()}${modeIndicator} ${imageBadges}`);
+    return `${getPromptSymbol()}${modeIndicator} ${imageBadges}`;
   };
 
   const setupKeypress = () => {
@@ -1137,8 +1137,7 @@ async function runSession(resumeSession?: Session) {
           state.pendingImages.push(image);
           const currentLine = (getReadline() as any).line || "";
           process.stdout.write("\r\x1b[K");
-          showPrompt();
-          process.stdout.write(currentLine);
+          process.stdout.write(buildPrompt() + currentLine);
         }
       }
 
@@ -1146,7 +1145,7 @@ async function runSession(resumeSession?: Session) {
       if (key.ctrl && key.name === "l") {
         console.clear();
         printBanner();
-        showPrompt();
+        process.stdout.write(buildPrompt());
       }
 
       // Shift+Tab to cycle modes
@@ -1162,7 +1161,7 @@ async function runSession(resumeSession?: Session) {
           state.planMode = false;
           console.log(c.dim(`\n  ${sym.check()} safe mode\n`));
         }
-        showPrompt();
+        process.stdout.write(buildPrompt());
       }
     });
   };
@@ -1170,8 +1169,7 @@ async function runSession(resumeSession?: Session) {
   setupKeypress();
 
   const prompt = () => {
-    showPrompt();
-    getReadline().question("", async (input) => {
+    getReadline().question(buildPrompt(), async (input) => {
       const text = input.trim();
       const images = [...state.pendingImages];
       state.pendingImages = [];

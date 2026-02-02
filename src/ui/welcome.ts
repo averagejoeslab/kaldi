@@ -71,11 +71,12 @@ const KALDI_MASCOT = `
    (_|   |_)
 `;
 
+// ASCII-only mascot for proper terminal alignment
 const KALDI_MASCOT_SMALL = [
-  "  ∧＿∧  ",
-  " (･ω･ ) ",
-  "  |つ☕ |",
-  "  しーＪ ",
+  "  /\\_/\\  ",
+  " ( o.o ) ",
+  "  > ^ <  ",
+  "   |||   ",
 ];
 
 const KALDI_MASCOT_MINIMAL = "🐕☕";

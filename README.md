@@ -1,211 +1,103 @@
 <p align="center">
-  <img src="assets/logo-option-4.png" alt="Kaldi" width="300">
+  <img src="assets/logo-option-4.png" alt="Kaldi" width="200">
 </p>
 
-<h1 align="center">☕ Kaldi</h1>
+<h1 align="center">🐕 Kaldi Dovington</h1>
 
-<p align="center"><strong>Your loyal coding companion.</strong></p>
-
-<p align="center">
-Kaldi is a BYOK (Bring Your Own Key) agentic coding CLI.<br>
-Like a good cup of coffee and a loyal dog, Kaldi is always there to help you code.
-</p>
+<p align="center"><strong>The Mysterious Boy • Your Loyal Coding Companion</strong></p>
 
 <p align="center">
-<em>Named after the Ethiopian goatherd who discovered coffee, and inspired by man's best friend.</em>
+A minimal agentic coding CLI in ~180 lines.<br>
+Mr. Boy is a Great Pyrenees who loves coffee and coding.
 </p>
 
 ---
-
-## Features
-
-### 🔑 BYOK - Bring Your Own Key
-Use your preferred LLM provider:
-- **Anthropic** (Claude) - Recommended
-- **OpenAI** (GPT-4)
-- **Ollama** (Local models)
-- **OpenRouter** (Multiple providers)
-
-### 🤖 Agentic Coding
-Kaldi can autonomously:
-- Read, write, and edit files
-- Execute bash commands
-- Search your codebase (glob, grep)
-- Browse directories
-- Fetch web content
-- Plan and execute multi-step tasks
-
-### 🛡️ Safe by Default
-- Permission prompts before running commands or editing files
-- Diff preview shows exactly what will change
-- Compact mode for trusted workflows
-- Ctrl+C to cancel any operation
-
-### ☕ Coffee-Themed CLI
-Because coding is better with coffee:
-- `kaldi` - Start an interactive session
-- `kaldi beans` - Configure your provider (pick your beans)
-- `kaldi roast` - Review and critique code
-- `kaldi refill` - Resume a previous session
-- `kaldi doctor` - Check your setup
-
-## Installation
-
-### Quick Install (Recommended)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/averagejoeslab/kaldi/main/install.sh | bash
-```
-
-This will:
-- Clone Kaldi to `~/.kaldi`
-- Install dependencies and build
-- Create a launcher at `~/.local/bin/kaldi`
-
-> **Note:** Make sure `~/.local/bin` is in your PATH. Add this to your shell profile if needed:
-> ```bash
-> export PATH="$HOME/.local/bin:$PATH"
-> ```
-
-### Manual Install
-
-```bash
-# Clone the repository
-git clone https://github.com/averagejoeslab/kaldi.git
-cd kaldi
-
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Link globally (optional)
-npm link
-```
 
 ## Quick Start
 
 ```bash
-# Configure your provider (pick your beans)
-kaldi beans -p anthropic -k your-api-key
-
-# Or use environment variable
-export ANTHROPIC_API_KEY=your-api-key
-
-# Start coding
-kaldi
-```
-
-## Commands
-
-### CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `kaldi` | Start interactive session |
-| `kaldi beans` | Configure LLM provider |
-| `kaldi roast [path]` | Review code |
-| `kaldi refill` | Resume previous session |
-| `kaldi doctor` | Check setup |
-
-### Interactive Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/clear` | Clear conversation |
-| `/config` | Show configuration |
-| `/usage` | Show token usage & cost |
-| `/compact` | Toggle auto-approve mode |
-| `/sessions` | List saved sessions |
-| `/save` | Save current session |
-| `/load [id]` | Load a session |
-| `/init` | Initialize project context |
-| `/status` | Show git status |
-| `/diff` | Show git diff |
-| `/doctor` | Health check |
-| `/quit` | Exit |
-
-## Configuration
-
-### Provider Setup
-
-```bash
-# Set provider
-kaldi beans -p anthropic
-
-# Set API key
-kaldi beans -k sk-ant-xxx
-
-# Set model
-kaldi beans -m claude-sonnet-4-20250514
-
-# List all configurations
-kaldi beans -l
-```
-
-### Environment Variables
-
-```bash
+# Set your API key
 export ANTHROPIC_API_KEY=sk-ant-xxx
-export OPENAI_API_KEY=sk-xxx
+# Or use OpenRouter
 export OPENROUTER_API_KEY=sk-or-xxx
+
+# Run
+npx tsx kaldi.ts
+# Or
+npm start
 ```
+
+## Features
+
+- 🐕 **Single file** - Everything in `kaldi.ts` (~180 lines)
+- 🔧 **6 tools** - read, write, edit, glob, grep, bash
+- 🤖 **Agentic loop** - Autonomous multi-step execution
+- 🔑 **BYOK** - Anthropic or OpenRouter
+- 🎨 **Dog personality** - Mr. Boy's goofy charm
 
 ## Tools
 
-Kaldi has access to these tools:
-
 | Tool | Description |
 |------|-------------|
-| `read_file` | Read file contents with line numbers |
-| `write_file` | Create or overwrite files |
-| `edit_file` | Make targeted string replacements |
-| `list_dir` | List directory contents |
-| `bash` | Execute shell commands |
+| `read` | Read file with line numbers |
+| `write` | Write content to file |
+| `edit` | Replace text (old must be unique) |
 | `glob` | Find files by pattern |
-| `grep` | Search file contents |
-| `web_fetch` | Fetch web page content |
+| `grep` | Search for regex in files |
+| `bash` | Run shell commands |
 
-## Providers
+## Commands
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| Anthropic | claude-sonnet-4, claude-opus-4, claude-3.5-haiku | Recommended |
-| OpenAI | gpt-4o, gpt-4o-mini, o1 | |
-| Ollama | llama3.2, codellama, mistral | Local, free |
-| OpenRouter | Many | Multi-provider access |
+| Command | Description |
+|---------|-------------|
+| `/c` | Clear conversation |
+| `/q` or `exit` | Quit |
 
-## Development
+## Project Structure
 
-```bash
-# Watch mode
-npm run dev
-
-# Type check
-npm run typecheck
-
-# Build
-npm run build
 ```
+kaldi/
+├── kaldi.ts          # The entire app (~180 lines)
+├── package.json
+├── tsconfig.json
+└── src/              # Future expansion
+    ├── providers/    # Multi-provider support
+    ├── tools/        # Additional tools
+    ├── mcp/          # MCP server support
+    ├── context/      # Context management
+    ├── session/      # Session persistence
+    ├── hooks/        # Pre/post hooks
+    ├── skills/       # Slash commands
+    ├── permissions/  # Permission system
+    └── ui/           # Terminal UI
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key (alternative) |
+| `MODEL` | Override model (default: claude-sonnet-4) |
 
 ## Philosophy
 
-Kaldi is designed to be:
+Inspired by [nanocode](https://github.com/1rgs/nanocode) and [nanodeepagent](https://github.com/chrispangg/nanodeepagent).
 
-- **Loyal** - Sticks with you through complex tasks
-- **Attentive** - Pays attention to details and context
-- **Safe** - Asks before making changes
-- **Efficient** - Gets things done without unnecessary chatter
-- **Flexible** - Works with your preferred LLM
+The core is intentionally minimal. The `src/` folders are empty placeholders for future features like Claude Code has:
+- Multi-provider support
+- MCP servers
+- Session persistence
+- Background tasks
+- Hooks system
+- Skills/slash commands
+- Permission modes
+- Extended thinking
 
 ## License
 
-MIT
+MIT - Average Joes Lab
 
 ---
 
-*Made with ☕ by Average Joes Lab*
-
-*"Like a good cup of coffee and a faithful dog, always there when you need it."*
+*"The Mysterious Boy is on the case!"* 🐕

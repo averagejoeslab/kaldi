@@ -75,7 +75,17 @@ import {
   createMemory,
   buildMemoryPrompt,
   formatMemoryInfo,
+  getMemoryPath,
 } from "./core/memory.js";
+import {
+  loadNotes,
+  addNote,
+  removeNote,
+  clearNotes,
+  formatNotes,
+  buildNotesPrompt,
+  type Note,
+} from "./core/notes.js";
 import {
   validateApiKey,
   validateKeyFormat,
@@ -334,11 +344,13 @@ const commandDescriptions: Record<string, string> = {
   "/diff": "Git diff",
   "/commit": "Create git commit",
   "/copy": "Copy last response to clipboard",
-  "/init": "Describe this project",
   "/model": "Show/change model",
   "/coffee": "Get a fresh cup of coffee",
   "/goodboy": "Pet Kaldi",
-  "/memory": "View or edit project memory (KALDI.md)",
+  "/init": "Create KALDI.md for this project",
+  "/kaldi": "Show KALDI.md status",
+  "/memory": "View/add notes and learnings",
+  "/memory add": "Add a note to memory",
   "/export": "Export conversation to file",
   "/notify": "Toggle desktop notifications",
   "/highlight": "Toggle syntax highlighting",
@@ -571,11 +583,19 @@ function printHelp() {
       ]
     },
     {
-      title: "Memory & Export",
+      title: "Project",
       commands: [
-        ["/memory", "view/edit project memory"],
-        ["/memory init", "create KALDI.md file"],
+        ["/init", "create KALDI.md for this project"],
+        ["/kaldi", "show KALDI.md status"],
         ["/export [format]", "export conversation (md/json/html)"],
+      ]
+    },
+    {
+      title: "Memory",
+      commands: [
+        ["/memory", "show saved notes"],
+        ["/memory add <text>", "add a note"],
+        ["/memory rm <id>", "remove a note"],
       ]
     },
     {
@@ -967,21 +987,59 @@ const allCommands: Record<string, CommandHandler> = {
     console.log();
   },
 
-  "/init": async (_, ctx) => {
+  "/init": async (args, ctx) => {
+    // Check if KALDI.md already exists
+    if (hasMemory()) {
+      const path = getMemoryPath();
+      console.log(c.warning(`\n  KALDI.md already exists at ${path}`));
+      console.log(c.dim("  Use a text editor to modify it, or delete it to reinitialize.\n"));
+      return;
+    }
+
     console.log();
+    console.log(c.dim("  Creating KALDI.md for this project..."));
+    console.log();
+
     state.isProcessing = true;
     state.turnStartTime = Date.now();
+
     try {
+      // Have the agent analyze the project and generate KALDI.md content
       status.start("Sniffing around the project", true);
-      await ctx.agent.run("Describe this project briefly. What is it, what's the tech stack, and what are the main files?");
+      const analysisPrompt = `Analyze this project and create a KALDI.md file (similar to AGENTS.md or CLAUDE.md).
+
+The file should include:
+1. Project Overview - What does this project do?
+2. Tech Stack - What languages, frameworks, and tools are used?
+3. Project Structure - Key directories and their purposes
+4. Important Files - Main entry points and configuration files
+5. Coding Conventions - Style, naming patterns, etc.
+6. Development Commands - How to build, test, run
+7. Notes - Any other important context
+
+Format it as a well-structured Markdown file that will help an AI assistant understand and work with this codebase.
+
+After analyzing, output ONLY the markdown content for KALDI.md, nothing else.`;
+
+      await ctx.agent.run(analysisPrompt);
       status.clear();
+
+      // Create the file with the generated content
+      if (state.lastResponse.trim()) {
+        const path = createMemory(process.cwd(), state.lastResponse.trim());
+        console.log();
+        console.log(c.success(`  ${sym.check()} Created ${path}`));
+        console.log(c.dim("  This file will be loaded automatically in future sessions.\n"));
+      }
+
       const time = Date.now() - state.turnStartTime;
-      if (time > 2000) console.log(c.dim(`\n  ${sym.coffee} ${formatDuration(time)}`));
-    } catch {
+      if (time > 2000) console.log(c.dim(`  ${sym.coffee} ${formatDuration(time)}\n`));
+    } catch (e) {
       status.clear();
+      console.log(c.error(`  ${sym.cross()} Failed to initialize: ${e}\n`));
     }
+
     state.isProcessing = false;
-    console.log("\n");
   },
 
   "/copy": () => {
@@ -1032,36 +1090,86 @@ const allCommands: Record<string, CommandHandler> = {
   },
   "/pet": (args, ctx) => allCommands["/goodboy"](args, ctx),
 
-  // Memory commands
+  // Memory/Notes commands - for storing learnings and preferences
   "/memory": (args) => {
-    if (args[0] === "init" || args[0] === "create") {
-      const path = createMemory();
-      console.log(c.success(`\n  ${sym.check()} Created ${path}\n`));
-      console.log(c.dim("  Edit this file to add project context for Kaldi.\n"));
+    const subcommand = args[0];
+    const rest = args.slice(1).join(" ");
+
+    if (subcommand === "add" && rest) {
+      // Detect category from content or use general
+      let category: Note["category"] = "general";
+      if (rest.toLowerCase().includes("prefer") || rest.toLowerCase().includes("always") || rest.toLowerCase().includes("never")) {
+        category = "preference";
+      } else if (rest.toLowerCase().includes("learned") || rest.toLowerCase().includes("remember")) {
+        category = "learning";
+      } else if (rest.toLowerCase().includes("todo") || rest.toLowerCase().includes("fix")) {
+        category = "todo";
+      }
+
+      const isGlobal = args.includes("--global") || args.includes("-g");
+      const content = rest.replace(/--global|-g/g, "").trim();
+
+      const note = addNote(content, category, isGlobal);
+      console.log(c.success(`\n  ${sym.check()} Added note (${note.id.slice(-6)})\n`));
       return;
     }
 
-    if (args[0] === "edit") {
-      const memPath = hasMemory() ? require("./core/memory.js").getMemoryPath() : null;
-      if (!memPath) {
-        console.log(c.dim("\n  No memory file found. Run /memory init to create one.\n"));
+    if (subcommand === "remove" || subcommand === "rm") {
+      if (!rest) {
+        console.log(c.dim("\n  Usage: /memory remove <id>\n"));
         return;
       }
-      // Open in default editor
-      const { execSync } = require("child_process");
-      const editor = process.env.EDITOR || "nano";
-      try {
-        execSync(`${editor} "${memPath}"`, { stdio: "inherit" });
-      } catch {
-        console.log(c.dim(`\n  Could not open editor. Edit manually: ${memPath}\n`));
+      // Find note by partial ID
+      const notes = loadNotes();
+      const match = notes.find(n => n.id.endsWith(rest) || n.id === rest);
+      if (match && removeNote(match.id)) {
+        console.log(c.success(`\n  ${sym.check()} Removed note\n`));
+      } else {
+        console.log(c.error(`\n  ${sym.cross()} Note not found: ${rest}\n`));
       }
       return;
     }
 
-    // Show memory info
+    if (subcommand === "clear") {
+      const isGlobal = args.includes("--global") || args.includes("-g");
+      const count = clearNotes(isGlobal);
+      console.log(c.success(`\n  ${sym.check()} Cleared ${count} notes\n`));
+      return;
+    }
+
+    if (subcommand === "help") {
+      console.log();
+      console.log(c.primary("  Memory Commands"));
+      console.log();
+      console.log(`  ${c.accent("/memory")}              Show all saved notes`);
+      console.log(`  ${c.accent("/memory add <text>")}   Add a new note`);
+      console.log(`  ${c.accent("/memory add -g")}       Add a global note (all projects)`);
+      console.log(`  ${c.accent("/memory rm <id>")}      Remove a note by ID`);
+      console.log(`  ${c.accent("/memory clear")}        Clear all project notes`);
+      console.log();
+      console.log(c.dim("  Notes are automatically categorized as:"));
+      console.log(c.dim("    fact, preference, learning, todo, or general"));
+      console.log();
+      return;
+    }
+
+    // Default: show all notes
+    const notes = loadNotes();
+    console.log();
+    console.log(formatNotes(notes));
+    console.log();
+  },
+
+  // Show KALDI.md status
+  "/kaldi": () => {
     const result = loadMemory({ projectPath: process.cwd() });
     console.log();
-    console.log(formatMemoryInfo(result));
+    if (result.files.length === 0) {
+      console.log(c.dim("  No KALDI.md found"));
+      console.log(c.dim("  Run /init to create one for this project\n"));
+    } else {
+      console.log(formatMemoryInfo(result));
+    }
   },
 
   // Export conversation
@@ -1184,13 +1292,24 @@ async function runSession(resumeSession?: Session) {
     console.log(c.dim(`  ${sym.dog} resumed ${sym.dot()} ${session.metadata.messageCount} messages\n`));
   }
 
-  // Load project memory if available
+  // Load project memory (KALDI.md) if available
   const memoryResult = loadMemory({ projectPath: cwd });
   const memoryPrompt = buildMemoryPrompt(memoryResult);
-  const fullSystemPrompt = buildSystemPrompt(cwd) + memoryPrompt;
+
+  // Load user notes
+  const notes = loadNotes(cwd);
+  const notesPrompt = buildNotesPrompt(notes);
+
+  const fullSystemPrompt = buildSystemPrompt(cwd) + memoryPrompt + notesPrompt;
 
   if (memoryResult.files.length > 0) {
-    console.log(c.dim(`  ${sym.check()} loaded ${memoryResult.files.length} memory file(s)\n`));
+    console.log(c.dim(`  ${sym.check()} loaded KALDI.md`));
+  }
+  if (notes.length > 0) {
+    console.log(c.dim(`  ${sym.check()} loaded ${notes.length} note(s)`));
+  }
+  if (memoryResult.files.length > 0 || notes.length > 0) {
+    console.log();
   }
 
   const agent = new Agent({

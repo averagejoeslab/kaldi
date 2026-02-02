@@ -141,6 +141,22 @@ export {
 
 export {
   // Types
+  type Note,
+  type NotesStore,
+
+  // Functions
+  loadNotes,
+  addNote,
+  removeNote,
+  clearNotes,
+  searchNotes,
+  getNotesByCategory,
+  formatNotes,
+  buildNotesPrompt,
+} from "./notes.js";
+
+export {
+  // Types
   type MCPServerConfig,
   type MCPTool,
   type MCPResource,

@@ -8,6 +8,9 @@ import * as readline from "readline";
 import { getConfig } from "../config/store.js";
 import { isCommand, executeCommand, type CommandContext } from "../commands/index.js";
 import { AgentOrchestrator } from "../agent/orchestrator.js";
+import { getProvider } from "../providers/index.js";
+import { createDefaultRegistry } from "../tools/index.js";
+import { buildSystemPrompt } from "../context/builder.js";
 import { getSkillsRegistry } from "../skills/index.js";
 import { c } from "../ui/theme/colors.js";
 import { sym } from "../ui/theme/symbols.js";
@@ -20,12 +23,14 @@ import type { CLIOptions } from "./types.js";
  */
 export class REPL {
   private rl: readline.Interface | null = null;
-  private agent: AgentOrchestrator;
+  private agent: AgentOrchestrator | null = null;
   private context: CommandContext;
   private running = false;
   private processing = false;
+  private options: CLIOptions;
 
   constructor(options: CLIOptions) {
+    this.options = options;
     const config = getConfig();
 
     this.context = {
@@ -34,10 +39,56 @@ export class REPL {
       model: options.model || config.model || "claude-sonnet-4-20250514",
       sessionId: options.resume,
     };
+  }
 
-    this.agent = new AgentOrchestrator({
-      provider: this.context.provider,
-      model: this.context.model,
+  /**
+   * Initialize the agent
+   */
+  private initAgent(): AgentOrchestrator {
+    const config = getConfig();
+
+    // Get provider instance
+    const provider = getProvider(this.context.provider, {
+      [this.context.provider]: {
+        apiKey: config.apiKey,
+        model: this.context.model,
+      },
+    });
+
+    // Get tools
+    const tools = createDefaultRegistry();
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt({
+      projectPath: this.context.cwd,
+    });
+
+    return new AgentOrchestrator({
+      provider,
+      tools,
+      systemPrompt,
+      maxTurns: 50,
+      requirePermission: true,
+      callbacks: {
+        onText: (text) => {
+          process.stdout.write(text);
+        },
+        onToolUse: (name, args) => {
+          console.log(c.dim(`\n  Using tool: ${name}`));
+        },
+        onPermissionRequest: async (request) => {
+          // For now, auto-approve read operations
+          if (["read_file", "glob", "grep", "list_dir"].includes(request.tool)) {
+            return true;
+          }
+          // TODO: Implement proper permission prompt
+          console.log(c.warning(`\n  ${sym.warning} Permission requested: ${request.description}`));
+          return true;
+        },
+        onError: (error) => {
+          console.error(c.error(`\n  ${sym.error} ${error.message}`));
+        },
+      },
     });
   }
 
@@ -47,8 +98,20 @@ export class REPL {
   async start(): Promise<void> {
     this.running = true;
 
+    // Initialize agent
+    try {
+      this.agent = this.initAgent();
+    } catch (error) {
+      console.error(c.error(`\nError initializing agent: ${error instanceof Error ? error.message : error}`));
+      console.error(c.dim("\nMake sure you've configured your provider: kaldi beans -p anthropic -k YOUR_KEY\n"));
+      process.exit(1);
+    }
+
     // Print welcome message
-    printWelcome();
+    printWelcome({
+      provider: this.context.provider,
+      model: this.context.model,
+    });
 
     // Create readline interface
     this.rl = readline.createInterface({
@@ -125,35 +188,11 @@ export class REPL {
 
         if (result.clear) {
           // Clear conversation
-          this.agent = new AgentOrchestrator({
-            provider: this.context.provider,
-            model: this.context.model,
-          });
+          this.agent?.clearHistory();
         }
       } else {
-        // Check for skills (commands that start with /)
-        if (trimmed.startsWith("/")) {
-          const parts = trimmed.slice(1).split(/\s+/);
-          const skillName = parts[0];
-          const skillArgs = parts.slice(1).join(" ");
-
-          const registry = getSkillsRegistry();
-          const skillResult = registry.executeSkill(skillName, skillArgs, {
-            cwd: this.context.cwd,
-            provider: this.context.provider,
-            model: this.context.model,
-            sessionId: this.context.sessionId,
-          });
-
-          if (skillResult) {
-            await this.runAgent(skillResult.prompt);
-          } else {
-            console.log(c.error(`\n  ${sym.error} Unknown command or skill: ${skillName}\n`));
-          }
-        } else {
-          // Regular message to agent
-          await this.runAgent(trimmed);
-        }
+        // Regular message to agent
+        await this.runAgent(trimmed);
       }
     } catch (error) {
       console.log(c.error(`\n  ${sym.error} Error: ${error instanceof Error ? error.message : String(error)}\n`));
@@ -167,32 +206,24 @@ export class REPL {
    * Run the agent with a message
    */
   private async runAgent(message: string): Promise<void> {
-    const spinner = createSpinner("Thinking...");
-    spinner.start();
+    if (!this.agent) {
+      console.log(c.error("\n  Agent not initialized\n"));
+      return;
+    }
+
+    console.log(""); // New line before response
 
     try {
       const result = await this.agent.run(message);
 
-      spinner.stop();
+      // Response is already streamed via callbacks
+      console.log(""); // New line after response
 
-      // Print response
-      if (result.response) {
-        console.log("");
-        console.log(result.response);
-        console.log("");
-      }
-
-      // Print tool results summary
-      if (result.toolResults?.length) {
-        const successful = result.toolResults.filter((r) => r.success).length;
-        const failed = result.toolResults.length - successful;
-
-        if (failed > 0) {
-          console.log(c.dim(`  Tools: ${successful} succeeded, ${failed} failed`));
-        }
+      // Show usage if verbose
+      if (this.options.verbose && result.usage) {
+        console.log(c.dim(`  Tokens: ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`));
       }
     } catch (error) {
-      spinner.stop();
       throw error;
     }
   }
@@ -201,7 +232,14 @@ export class REPL {
    * Run a single prompt and exit
    */
   async runOnce(prompt: string): Promise<void> {
-    console.log("");
+    try {
+      this.agent = this.initAgent();
+    } catch (error) {
+      console.error(c.error(`\nError: ${error instanceof Error ? error.message : error}`));
+      console.error(c.dim("\nMake sure you've configured your provider: kaldi beans -p anthropic -k YOUR_KEY\n"));
+      process.exit(1);
+    }
+
     await this.runAgent(prompt);
   }
 }

@@ -1,13 +1,27 @@
-import { DefaultToolRegistry } from "./registry.js";
-import { readFileTool, writeFileTool, editFileTool } from "./file.js";
+/**
+ * Tools Module
+ *
+ * Tool system for the agent.
+ */
+
+export * from "./types.js";
+export { DefaultToolRegistry, getToolRegistry, resetToolRegistry } from "./registry.js";
+export { bashTool } from "./bash.js";
+export { readFileTool, writeFileTool, editFileTool } from "./file.js";
+export { globTool, grepTool } from "./search.js";
+export { listDirTool } from "./list-dir.js";
+export { webFetchTool } from "./web.js";
+
+import { DefaultToolRegistry, getToolRegistry } from "./registry.js";
 import { bashTool } from "./bash.js";
+import { readFileTool, writeFileTool, editFileTool } from "./file.js";
 import { globTool, grepTool } from "./search.js";
 import { listDirTool } from "./list-dir.js";
 import { webFetchTool } from "./web.js";
 
-export * from "./types.js";
-export * from "./registry.js";
-
+/**
+ * Create a registry with all default tools registered
+ */
 export function createDefaultRegistry(): DefaultToolRegistry {
   const registry = new DefaultToolRegistry();
 
@@ -32,25 +46,21 @@ export function createDefaultRegistry(): DefaultToolRegistry {
   return registry;
 }
 
-// Convert registry tools to provider format
-export function toolsToProviderFormat(
-  registry: DefaultToolRegistry
-): Array<{
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}> {
-  return registry.list().map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: Object.fromEntries(
-      Object.entries(tool.parameters).map(([key, param]) => [
-        key,
-        {
-          type: param.type,
-          description: param.description,
-        },
-      ])
-    ),
-  }));
+/**
+ * Initialize the global tool registry with default tools
+ */
+export function initializeTools(): DefaultToolRegistry {
+  const registry = getToolRegistry();
+
+  // Register all default tools
+  registry.register(readFileTool);
+  registry.register(writeFileTool);
+  registry.register(editFileTool);
+  registry.register(listDirTool);
+  registry.register(bashTool);
+  registry.register(globTool);
+  registry.register(grepTool);
+  registry.register(webFetchTool);
+
+  return registry;
 }

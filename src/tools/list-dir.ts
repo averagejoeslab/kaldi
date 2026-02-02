@@ -1,3 +1,9 @@
+/**
+ * List Directory Tool
+ *
+ * List contents of a directory.
+ */
+
 import { readdir, stat } from "fs/promises";
 import { join } from "path";
 import type { ToolDefinition } from "./types.js";
@@ -20,7 +26,14 @@ export const listDirTool: ToolDefinition = {
       const entries = await readdir(dirPath, { withFileTypes: true });
       const results: string[] = [];
 
-      for (const entry of entries.slice(0, 100)) {
+      // Sort: directories first, then files
+      const sorted = entries.sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      for (const entry of sorted.slice(0, 200)) {
         const fullPath = join(dirPath, entry.name);
         let info = "";
 
@@ -41,8 +54,8 @@ export const listDirTool: ToolDefinition = {
         results.push(info);
       }
 
-      if (entries.length > 100) {
-        results.push(`\n... and ${entries.length - 100} more entries`);
+      if (entries.length > 200) {
+        results.push(`\n... and ${entries.length - 200} more entries`);
       }
 
       return {
@@ -62,6 +75,7 @@ export const listDirTool: ToolDefinition = {
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }

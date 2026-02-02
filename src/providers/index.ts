@@ -1,8 +1,32 @@
-import type { Provider, ProviderConfig, ProviderType } from "./types.js";
-import { AnthropicProvider } from "./anthropic.js";
-import { OpenAIProvider } from "./openai.js";
+/**
+ * Providers Module
+ *
+ * LLM provider abstraction layer.
+ */
 
 export * from "./types.js";
+export { AnthropicProvider, createAnthropicProvider } from "./anthropic.js";
+export { OpenAIProvider, createOpenAIProvider } from "./openai.js";
+export { OpenRouterProvider, createOpenRouterProvider } from "./openrouter.js";
+export { OllamaProvider, createOllamaProvider } from "./ollama.js";
+export {
+  validateApiKey,
+  validateKeyFormat,
+  formatValidationResult,
+  type ValidationResult,
+} from "./validation.js";
+
+import type { Provider, ProviderConfig, ProvidersConfig, ProviderType } from "./types.js";
+import { AnthropicProvider } from "./anthropic.js";
+import { OpenAIProvider } from "./openai.js";
+import { OpenRouterProvider } from "./openrouter.js";
+import { OllamaProvider } from "./ollama.js";
+
+// ============================================================================
+// PROVIDER FACTORY
+// ============================================================================
+
+const providers: Map<string, Provider> = new Map();
 
 export function createProvider(
   type: ProviderType,
@@ -14,30 +38,58 @@ export function createProvider(
     case "openai":
       return new OpenAIProvider(config);
     case "openrouter":
-      // OpenRouter uses OpenAI-compatible API
-      return new OpenAIProvider({
-        ...config,
-        baseUrl: config.baseUrl ?? "https://openrouter.ai/api/v1",
-      });
+      return new OpenRouterProvider(config);
     case "ollama":
-      // Ollama uses OpenAI-compatible API
-      return new OpenAIProvider({
-        ...config,
-        apiKey: config.apiKey || "ollama",
-        baseUrl: config.baseUrl ?? "http://localhost:11434/v1",
-      });
+      return new OllamaProvider(config);
     default:
       throw new Error(`Unknown provider: ${type}`);
   }
 }
 
-export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
-  anthropic: [
-    "claude-sonnet-4-20250514",
-    "claude-opus-4-20250514",
-    "claude-3-5-haiku-20241022",
-  ],
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini"],
-  openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o", "google/gemini-pro"],
-  ollama: ["llama3.2", "codellama", "mistral", "deepseek-coder"],
-};
+export function getProvider(name: string, config?: ProvidersConfig): Provider {
+  const cached = providers.get(name);
+  if (cached) return cached;
+
+  const providerConfig = config?.[name as ProviderType];
+  const provider = createProvider(name as ProviderType, providerConfig || {});
+
+  providers.set(name, provider);
+  return provider;
+}
+
+export function initializeProviders(config: ProvidersConfig): void {
+  providers.clear();
+
+  if (config.anthropic?.apiKey) {
+    providers.set("anthropic", new AnthropicProvider(config.anthropic));
+  }
+  if (config.openai?.apiKey) {
+    providers.set("openai", new OpenAIProvider(config.openai));
+  }
+  if (config.openrouter?.apiKey) {
+    providers.set("openrouter", new OpenRouterProvider(config.openrouter));
+  }
+  // Ollama doesn't need API key
+  providers.set("ollama", new OllamaProvider(config.ollama));
+}
+
+export function getConfiguredProviders(): string[] {
+  return Array.from(providers.entries())
+    .filter(([_, p]) => p.isConfigured())
+    .map(([name]) => name);
+}
+
+export function getDefaultProvider(config: ProvidersConfig): Provider | null {
+  const name = config.default;
+  if (!name) return null;
+
+  try {
+    return getProvider(name, config);
+  } catch {
+    return null;
+  }
+}
+
+export function resetProviders(): void {
+  providers.clear();
+}

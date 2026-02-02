@@ -1,9 +1,15 @@
+/**
+ * Web Tools
+ *
+ * Fetch content from URLs.
+ */
+
 import type { ToolDefinition } from "./types.js";
 
 export const webFetchTool: ToolDefinition = {
   name: "web_fetch",
   description:
-    "Fetch content from a URL. Returns the text content of the page. Use for documentation, APIs, or reference material.",
+    "Fetch content from a URL. Use for documentation, APIs, or reference material.",
   parameters: {
     url: {
       type: "string",
@@ -14,6 +20,7 @@ export const webFetchTool: ToolDefinition = {
       type: "string",
       description: "What to extract: 'text' (default), 'html', or 'json'",
       required: false,
+      enum: ["text", "html", "json"],
     },
   },
   async execute(args) {
@@ -80,11 +87,19 @@ export const webFetchTool: ToolDefinition = {
   },
 };
 
-// Simple HTML to text conversion
+/**
+ * Simple HTML to text conversion
+ */
 function htmlToText(html: string): string {
   // Remove scripts and styles
-  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  let text = html.replace(
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    ""
+  );
+  text = text.replace(
+    /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi,
+    ""
+  );
 
   // Convert common elements
   text = text.replace(/<br\s*\/?>/gi, "\n");

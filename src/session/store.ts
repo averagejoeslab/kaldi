@@ -1,8 +1,18 @@
+/**
+ * Session Store
+ *
+ * Persistence layer for conversation sessions.
+ */
+
 import { readFile, writeFile, mkdir, readdir, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { Message } from "../providers/types.js";
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 export interface SessionMetadata {
   id: string;
@@ -13,6 +23,7 @@ export interface SessionMetadata {
   model: string;
   messageCount: number;
   summary?: string;
+  compactionCount?: number;
 }
 
 export interface Session {
@@ -22,7 +33,15 @@ export interface Session {
   totalOutputTokens: number;
 }
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const SESSIONS_DIR = join(homedir(), ".kaldi", "sessions");
+
+// ============================================================================
+// HELPERS
+// ============================================================================
 
 async function ensureSessionsDir(): Promise<void> {
   if (!existsSync(SESSIONS_DIR)) {
@@ -37,6 +56,10 @@ export function generateSessionId(): string {
   const random = Math.random().toString(36).slice(2, 6);
   return `${date}-${time}-${random}`;
 }
+
+// ============================================================================
+// CRUD OPERATIONS
+// ============================================================================
 
 export async function saveSession(session: Session): Promise<void> {
   await ensureSessionsDir();
@@ -78,8 +101,9 @@ export async function listSessions(): Promise<SessionMetadata[]> {
   }
 
   // Sort by most recent first
-  sessions.sort((a, b) =>
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  sessions.sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
 
   return sessions;
@@ -96,6 +120,10 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   }
 }
 
+// ============================================================================
+// QUERIES
+// ============================================================================
+
 export async function getLatestSession(): Promise<Session | null> {
   const sessions = await listSessions();
   if (sessions.length === 0) return null;
@@ -103,7 +131,9 @@ export async function getLatestSession(): Promise<Session | null> {
   return loadSession(sessions[0].id);
 }
 
-export async function getSessionForDirectory(dir: string): Promise<Session | null> {
+export async function getSessionForDirectory(
+  dir: string
+): Promise<Session | null> {
   const sessions = await listSessions();
 
   for (const metadata of sessions) {
@@ -114,6 +144,22 @@ export async function getSessionForDirectory(dir: string): Promise<Session | nul
 
   return null;
 }
+
+export async function searchSessions(query: string): Promise<SessionMetadata[]> {
+  const sessions = await listSessions();
+  const lowerQuery = query.toLowerCase();
+
+  return sessions.filter(
+    (s) =>
+      s.id.includes(lowerQuery) ||
+      s.workingDirectory.toLowerCase().includes(lowerQuery) ||
+      s.summary?.toLowerCase().includes(lowerQuery)
+  );
+}
+
+// ============================================================================
+// FACTORY
+// ============================================================================
 
 export function createSession(
   workingDirectory: string,
@@ -129,6 +175,7 @@ export function createSession(
       provider,
       model,
       messageCount: 0,
+      compactionCount: 0,
     },
     messages: [],
     totalInputTokens: 0,

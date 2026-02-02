@@ -1,3 +1,9 @@
+/**
+ * OpenAI Provider
+ *
+ * Implementation for GPT models via OpenAI SDK.
+ */
+
 import OpenAI from "openai";
 import type {
   Provider,
@@ -5,22 +11,30 @@ import type {
   CompletionRequest,
   CompletionResponse,
   StreamCallbacks,
-  Tool,
+  ToolDefinition,
   ContentBlock,
   Message,
 } from "./types.js";
+
+const DEFAULT_MODEL = "gpt-4o";
 
 export class OpenAIProvider implements Provider {
   name = "openai";
   private client: OpenAI;
   private model: string;
+  private apiKey: string;
 
-  constructor(config: ProviderConfig) {
+  constructor(config: ProviderConfig = {}) {
+    this.apiKey = config.apiKey || "";
     this.client = new OpenAI({
-      apiKey: config.apiKey,
+      apiKey: this.apiKey,
       baseURL: config.baseUrl,
     });
-    this.model = config.model ?? "gpt-4o";
+    this.model = config.model ?? DEFAULT_MODEL;
+  }
+
+  isConfigured(): boolean {
+    return !!this.apiKey;
   }
 
   async complete(
@@ -28,10 +42,13 @@ export class OpenAIProvider implements Provider {
     callbacks?: StreamCallbacks
   ): Promise<CompletionResponse> {
     const tools = request.tools?.map((tool) => this.convertTool(tool));
-    const messages = this.convertMessages(request.messages, request.systemPrompt);
+    const messages = this.convertMessages(
+      request.messages,
+      request.systemPrompt
+    );
 
     const stream = await this.client.chat.completions.create({
-      model: this.model,
+      model: request.model || this.model,
       max_tokens: request.maxTokens ?? 8192,
       messages,
       tools: tools?.length ? tools : undefined,
@@ -44,70 +61,91 @@ export class OpenAIProvider implements Provider {
       number,
       { id: string; name: string; arguments: string }
     > = new Map();
+    let totalTokens = 0;
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
+    try {
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        const usage = chunk.usage;
 
-      if (delta?.content) {
-        textContent += delta.content;
-        callbacks?.onText?.(delta.content);
-      }
+        if (usage) {
+          totalTokens = usage.total_tokens || 0;
+        }
 
-      if (delta?.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const existing = toolCalls.get(tc.index);
-          if (existing) {
-            if (tc.function?.arguments) {
-              existing.arguments += tc.function.arguments;
+        if (delta?.content) {
+          textContent += delta.content;
+          callbacks?.onText?.(delta.content);
+        }
+
+        if (delta?.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const existing = toolCalls.get(tc.index);
+            if (existing) {
+              if (tc.function?.arguments) {
+                existing.arguments += tc.function.arguments;
+              }
+            } else {
+              toolCalls.set(tc.index, {
+                id: tc.id ?? `tool_${Date.now()}_${tc.index}`,
+                name: tc.function?.name ?? "",
+                arguments: tc.function?.arguments ?? "",
+              });
             }
-          } else {
-            toolCalls.set(tc.index, {
-              id: tc.id ?? `tool_${Date.now()}_${tc.index}`,
-              name: tc.function?.name ?? "",
-              arguments: tc.function?.arguments ?? "",
-            });
           }
         }
       }
-    }
 
-    // Add text content if present
-    if (textContent) {
-      contentBlocks.push({ type: "text", text: textContent });
-    }
-
-    // Add tool calls
-    for (const tc of toolCalls.values()) {
-      let input: Record<string, unknown> = {};
-      try {
-        input = tc.arguments ? JSON.parse(tc.arguments) : {};
-      } catch {
-        // Invalid JSON, use empty object
+      // Add text content if present
+      if (textContent) {
+        contentBlocks.push({ type: "text", text: textContent });
       }
 
-      contentBlocks.push({
-        type: "tool_use",
-        id: tc.id,
-        name: tc.name,
-        input,
-      });
+      // Add tool calls
+      for (const tc of toolCalls.values()) {
+        let input: Record<string, unknown> = {};
+        try {
+          input = tc.arguments ? JSON.parse(tc.arguments) : {};
+        } catch {
+          // Invalid JSON, use empty object
+        }
 
-      callbacks?.onToolUse?.({
-        id: tc.id,
-        name: tc.name,
-        input,
-      });
+        contentBlocks.push({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.name,
+          input,
+        });
+
+        callbacks?.onToolUse?.({
+          id: tc.id,
+          name: tc.name,
+          input,
+        });
+      }
+
+      const stopReason = toolCalls.size > 0 ? "tool_use" : "end_turn";
+
+      return {
+        id: `openai-${Date.now()}`,
+        model: request.model || this.model,
+        content: contentBlocks,
+        stopReason,
+        usage: {
+          inputTokens: 0, // OpenAI streaming doesn't provide this easily
+          outputTokens: totalTokens,
+        },
+      };
+    } catch (error) {
+      callbacks?.onError?.(
+        error instanceof Error ? error : new Error(String(error))
+      );
+      throw error;
     }
-
-    const stopReason = toolCalls.size > 0 ? "tool_use" : "end_turn";
-
-    return {
-      content: contentBlocks,
-      stopReason,
-    };
   }
 
   async listModels(): Promise<string[]> {
+    if (!this.apiKey) return [];
+
     try {
       const models = await this.client.models.list();
       return models.data
@@ -120,6 +158,8 @@ export class OpenAIProvider implements Provider {
   }
 
   async validateKey(): Promise<boolean> {
+    if (!this.apiKey) return false;
+
     try {
       await this.client.models.list();
       return true;
@@ -128,7 +168,7 @@ export class OpenAIProvider implements Provider {
     }
   }
 
-  private convertTool(tool: Tool): OpenAI.ChatCompletionTool {
+  private convertTool(tool: ToolDefinition): OpenAI.ChatCompletionTool {
     return {
       type: "function",
       function: {
@@ -136,8 +176,8 @@ export class OpenAIProvider implements Provider {
         description: tool.description,
         parameters: {
           type: "object",
-          properties: tool.parameters,
-          required: Object.keys(tool.parameters),
+          properties: tool.input_schema.properties,
+          required: tool.input_schema.required || [],
         },
       },
     };
@@ -156,7 +196,7 @@ export class OpenAIProvider implements Provider {
     for (const msg of messages) {
       if (typeof msg.content === "string") {
         result.push({
-          role: msg.role,
+          role: msg.role as "user" | "assistant",
           content: msg.content,
         });
       } else {
@@ -170,7 +210,12 @@ export class OpenAIProvider implements Provider {
           const toolCalls = msg.content
             .filter((b) => b.type === "tool_use")
             .map((b) => {
-              const tu = b as { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+              const tu = b as {
+                type: "tool_use";
+                id: string;
+                name: string;
+                input: Record<string, unknown>;
+              };
               return {
                 id: tu.id,
                 type: "function" as const,
@@ -188,11 +233,18 @@ export class OpenAIProvider implements Provider {
           });
         } else if (msg.role === "user") {
           // Tool results go in separate tool messages
-          const toolResults = msg.content.filter((b) => b.type === "tool_result");
+          const toolResults = msg.content.filter(
+            (b) => b.type === "tool_result"
+          );
           const textParts = msg.content.filter((b) => b.type === "text");
 
           for (const tr of toolResults) {
-            const toolResult = tr as { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
+            const toolResult = tr as {
+              type: "tool_result";
+              tool_use_id: string;
+              content: string;
+              is_error?: boolean;
+            };
             result.push({
               role: "tool",
               tool_call_id: toolResult.tool_use_id,
@@ -203,7 +255,9 @@ export class OpenAIProvider implements Provider {
           if (textParts.length > 0) {
             result.push({
               role: "user",
-              content: textParts.map((b) => (b as { type: "text"; text: string }).text).join(""),
+              content: textParts
+                .map((b) => (b as { type: "text"; text: string }).text)
+                .join(""),
             });
           }
         }
@@ -212,4 +266,8 @@ export class OpenAIProvider implements Provider {
 
     return result;
   }
+}
+
+export function createOpenAIProvider(config?: ProviderConfig): Provider {
+  return new OpenAIProvider(config);
 }

@@ -1,10 +1,17 @@
+/**
+ * Bash Tool
+ *
+ * Execute shell commands.
+ */
+
 import { spawn } from "child_process";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition, ToolContext } from "./types.js";
 
 export const bashTool: ToolDefinition = {
   name: "bash",
   description:
-    "Execute a bash command. Use this for git, npm, and other CLI operations.",
+    "Execute a bash command. Use for git, npm, and other CLI operations.",
+  requiresPermission: true,
   parameters: {
     command: {
       type: "string",
@@ -15,9 +22,10 @@ export const bashTool: ToolDefinition = {
       type: "number",
       description: "Timeout in milliseconds (default: 120000)",
       required: false,
+      default: 120000,
     },
   },
-  async execute(args) {
+  async execute(args, context?: ToolContext) {
     const command = args.command as string;
     const timeout = (args.timeout as number) || 120000;
 
@@ -27,14 +35,22 @@ export const bashTool: ToolDefinition = {
       let killed = false;
 
       const proc = spawn("bash", ["-c", command], {
-        cwd: process.cwd(),
-        env: process.env,
+        cwd: context?.cwd || process.cwd(),
+        env: { ...process.env, ...context?.env },
       });
 
       const timer = setTimeout(() => {
         killed = true;
         proc.kill("SIGTERM");
       }, timeout);
+
+      // Handle abort signal
+      if (context?.abortSignal) {
+        context.abortSignal.addEventListener("abort", () => {
+          killed = true;
+          proc.kill("SIGTERM");
+        });
+      }
 
       proc.stdout.on("data", (data) => {
         stdout += data.toString();
@@ -51,7 +67,9 @@ export const bashTool: ToolDefinition = {
           resolve({
             success: false,
             output: stdout,
-            error: `Command timed out after ${timeout}ms`,
+            error: context?.abortSignal?.aborted
+              ? "Command aborted"
+              : `Command timed out after ${timeout}ms`,
           });
           return;
         }

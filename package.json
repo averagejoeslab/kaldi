@@ -6,12 +6,12 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "kaldi": "./dist/cli.js"
+    "kaldi": "./dist/main.js"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "start": "node dist/cli.js",
+    "start": "node dist/main.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

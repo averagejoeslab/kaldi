@@ -1,9 +1,30 @@
+/**
+ * UI Module
+ *
+ * All user interface components and formatting.
+ */
+
+// Theme (single source of truth for colors)
+export * from "./theme/index.js";
+
+// New format functions
+export * from "./format/index.js";
+
+// New components
+export * from "./components/index.js";
+
+// New input handling
+export * from "./input/index.js";
+
+// Desktop notifications
+export { notify, notifyComplete, notifyError } from "./notifications.js";
+
+// Legacy exports for backwards compatibility
 export * from "./diff.js";
 export {
   KaldiSpinner,
-  createSpinner,
-  type SpinnerOptions,
-  status as spinnerStatus,
+  createSpinner as createLegacySpinner,
+  type SpinnerOptions as LegacySpinnerOptions,
 } from "./spinner.js";
 export * from "./autocomplete.js";
 export {
@@ -16,13 +37,10 @@ export {
   getRunningMessage,
   getWritingMessage,
   getCompletionMessage,
-  formatDuration,
+  formatDuration as formatDurationLegacy,
 } from "./status.js";
 export * from "./clipboard.js";
-export * from "./input.js";
 export * from "./terminal.js";
-export * from "./keyboard.js";
-export * from "./vim.js";
 export * from "./welcome.js";
 export * from "./tool-tree.js";
 export * from "./statusline.js";
@@ -44,8 +62,8 @@ export {
   getBackgroundUI,
   resetBackgroundUI,
   formatBackgroundIndicator,
-  formatTaskList,
-  formatTaskStatus,
+  formatTaskList as formatBackgroundTaskList,
+  formatTaskStatus as formatBackgroundTaskStatus,
   formatTaskCompletion,
   isBackgroundKey,
   formatBackgroundHint,
@@ -55,9 +73,9 @@ export {
 
 // Syntax highlighting
 export {
-  highlight,
-  detectLanguage,
-  formatCodeBlock,
+  highlight as highlightLegacy,
+  detectLanguage as detectLanguageLegacy,
+  formatCodeBlock as formatCodeBlockLegacy,
   highlightCodeBlocks,
   coffeeTheme,
   defaultTheme as highlightTheme,
@@ -94,12 +112,12 @@ export {
   type MultilineState,
 } from "./multiline.js";
 
-// Token display
+// Token display (legacy)
 export {
   TokenCounter,
   getTokenCounter,
   resetTokenCounter,
-  formatTokenCount,
+  formatTokenCount as formatTokenCountLegacy,
   formatCost,
   formatInlineTokens,
   formatFullTokens,
@@ -108,19 +126,19 @@ export {
   formatTokenProgress,
   calculateContextWindow,
   formatContextWindow,
-  type TokenStats,
+  type TokenStats as LegacyTokenStats,
   type TokenDisplayConfig,
   type ContextWindow,
 } from "./tokens.js";
 
-// Notifications
+// Legacy notifications
 export {
   NotificationSender,
   getNotificationSender,
   resetNotificationSender,
   notifyTaskComplete,
   notifyResponseReady,
-  notifyError,
+  notifyError as notifyErrorLegacy,
   formatNotificationStatus,
   formatNotificationSettings,
   type NotificationConfig,

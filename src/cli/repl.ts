@@ -17,8 +17,7 @@ import { sym } from "../ui/theme/symbols.js";
 import { printGoodbye } from "../ui/components/welcome.js";
 import {
   printWelcomeScreen,
-  createAnimatedSpinner,
-  spinnerFrames,
+  getLiveDisplay,
 } from "../ui/dynamic/index.js";
 import type { CLIOptions } from "./types.js";
 
@@ -33,8 +32,7 @@ export class REPL {
   private processing = false;
   private options: CLIOptions;
   private tokenUsage = { input: 0, output: 0 };
-  private currentSpinner: ReturnType<typeof createAnimatedSpinner> | null = null;
-  private toolStartTime = 0;
+  private liveDisplay = getLiveDisplay();
 
   constructor(options: CLIOptions) {
     this.options = options;
@@ -78,78 +76,30 @@ export class REPL {
       requirePermission: true,
       callbacks: {
         onText: (text) => {
-          // Stop any spinner when text starts
-          if (this.currentSpinner) {
-            this.currentSpinner.stop();
-            this.currentSpinner = null;
-          }
+          // Switch to streaming mode and output text
+          this.liveDisplay.startStreaming();
           process.stdout.write(text);
         },
         onThinking: (text) => {
-          // Update spinner with thinking indicator
-          if (this.currentSpinner && text) {
-            const preview = text.length > 50 ? text.slice(0, 47) + "..." : text;
-            this.currentSpinner.update(`Thinking... ${c.dim(preview)}`);
+          // Update thinking display with preview
+          if (text) {
+            this.liveDisplay.updateThinking(text);
           }
         },
         onToolUse: (name, args) => {
-          // Stop spinner when starting tool
-          if (this.currentSpinner) {
-            this.currentSpinner.stop();
-            this.currentSpinner = null;
-          }
-
-          // Track timing
-          this.toolStartTime = Date.now();
-
-          // Show tool being used
-          console.log("");
-          console.log(`${c.honey("⚙")} ${c.bold(name)}`);
-
-          // Show relevant info based on tool type
-          if (name === "bash" && args.command) {
-            const cmd = String(args.command);
-            const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
-            console.log(c.dim(`  $ ${preview}`));
-          } else if (name === "read_file" && args.path) {
-            console.log(c.dim(`  📄 ${args.path}`));
-          } else if (name === "edit_file" && args.path) {
-            console.log(c.dim(`  ✏️  ${args.path}`));
-          } else if (name === "write_file" && args.path) {
-            console.log(c.dim(`  📝 ${args.path}`));
-          } else if (name === "list_dir" && args.path) {
-            console.log(c.dim(`  📁 ${args.path}`));
-          } else if (name === "glob" && args.pattern) {
-            console.log(c.dim(`  🔍 ${args.pattern}`));
-          } else if (name === "grep" && args.pattern) {
-            console.log(c.dim(`  🔎 ${args.pattern}`));
-          }
+          // Stop thinking and start tool display
+          this.liveDisplay.stopThinking();
+          this.liveDisplay.startTool(name, args as Record<string, unknown>);
         },
         onToolResult: (name, result, isError) => {
-          // Calculate elapsed time
-          const elapsed = Date.now() - this.toolStartTime;
-          const timing = this.formatDuration(elapsed);
+          // Complete the tool display
+          this.liveDisplay.completeTool(!isError, result);
 
+          // Show error details
           if (isError) {
-            console.log(`${c.error("✗")} ${c.dim(timing)}`);
-            // Show error details (not just in verbose mode)
             const errorPreview = result.slice(0, 200);
-            console.log(c.error(`  ${errorPreview}${result.length > 200 ? "..." : ""}`));
-          } else {
-            console.log(`${c.success("✓")} ${c.dim(timing)}`);
-            // Only show result preview in verbose mode
-            if (this.options.verbose && result) {
-              const lines = result.split("\n").slice(0, 3);
-              for (const line of lines) {
-                const preview = line.length > 80 ? line.slice(0, 77) + "..." : line;
-                console.log(c.dim(`  ${preview}`));
-              }
-              if (result.split("\n").length > 3) {
-                console.log(c.dim(`  ... (${result.split("\n").length - 3} more lines)`));
-              }
-            }
+            console.log(c.error(`  └─ ${errorPreview}${result.length > 200 ? "..." : ""}`));
           }
-          console.log("");
         },
         onPermissionRequest: async (request) => {
           // For now, auto-approve read operations
@@ -161,11 +111,8 @@ export class REPL {
           return true;
         },
         onError: (error) => {
-          // Stop any active spinner
-          if (this.currentSpinner) {
-            this.currentSpinner.stop();
-            this.currentSpinner = null;
-          }
+          // Stop live display and show error
+          this.liveDisplay.stop();
           console.error(c.error(`\n${sym.error} ${error.message}`));
         },
       },
@@ -295,21 +242,16 @@ export class REPL {
 
     console.log(""); // New line before response
 
-    // Start thinking spinner (only use spinner, not both)
-    this.currentSpinner = createAnimatedSpinner({
-      frames: spinnerFrames.dots,
-      color: c.honey,
-    });
-    this.currentSpinner.start("Thinking...");
+    // Start live display in thinking mode
+    this.liveDisplay.start();
+    this.liveDisplay.startThinking();
+    this.liveDisplay.updateTokens(this.tokenUsage.input, this.tokenUsage.output);
 
     try {
       const result = await this.agent.run(message);
 
-      // Stop spinner
-      if (this.currentSpinner) {
-        this.currentSpinner.stop();
-        this.currentSpinner = null;
-      }
+      // Stop live display
+      this.liveDisplay.stop();
 
       // Response is already streamed via callbacks
       console.log(""); // New line after response
@@ -324,14 +266,12 @@ export class REPL {
       if (result.usage) {
         const input = this.formatTokens(result.usage.inputTokens);
         const output = this.formatTokens(result.usage.outputTokens);
-        console.log(c.dim(`  ${c.dim("↑")}${input} ${c.dim("↓")}${output}`));
+        const total = this.formatTokens(this.tokenUsage.input + this.tokenUsage.output);
+        console.log(c.dim(`  ↑${input} ↓${output} · Total: ${total}`));
       }
     } catch (error) {
-      // Stop spinner on error
-      if (this.currentSpinner) {
-        this.currentSpinner.stop();
-        this.currentSpinner = null;
-      }
+      // Stop live display on error
+      this.liveDisplay.stop();
       throw error;
     }
   }
@@ -343,15 +283,6 @@ export class REPL {
     if (count < 1000) return String(count);
     if (count < 1000000) return `${(count / 1000).toFixed(1)}K`;
     return `${(count / 1000000).toFixed(2)}M`;
-  }
-
-  /**
-   * Format duration in human-readable form
-   */
-  private formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
   }
 
   /**

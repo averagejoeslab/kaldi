@@ -24,3 +24,6 @@ export * from "./status-bar.js";
 
 // Welcome screen
 export * from "./welcome.js";
+
+// Live display (Claude Code-like dynamic updates)
+export * from "./live-display.js";

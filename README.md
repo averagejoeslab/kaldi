@@ -29,7 +29,7 @@ npm start
 
 ## Features
 
-- 🐕 **Single file** - Everything in `kaldi.ts` (~180 lines)
+- 🐕 **Minimal** - ~350 lines across 5 files
 - 🔧 **6 tools** - read, write, edit, glob, grep, bash
 - 🤖 **Agentic loop** - Autonomous multi-step execution
 - 🔑 **BYOK** - Anthropic or OpenRouter
@@ -57,19 +57,27 @@ npm start
 
 ```
 kaldi/
-├── kaldi.ts          # The entire app (~180 lines)
+├── kaldi.ts              # Entry point (49 lines)
+├── src/
+│   ├── config.ts         # Configuration (17 lines)
+│   ├── agent/
+│   │   └── index.ts      # Agent loop & API (83 lines)
+│   ├── tools/
+│   │   └── index.ts      # Tool definitions (150 lines)
+│   └── ui/
+│       └── index.ts      # Display helpers (54 lines)
 ├── package.json
-├── tsconfig.json
-└── src/              # Future expansion
-    ├── providers/    # Multi-provider support
-    ├── tools/        # Additional tools
-    ├── mcp/          # MCP server support
-    ├── context/      # Context management
-    ├── session/      # Session persistence
-    ├── hooks/        # Pre/post hooks
-    ├── skills/       # Slash commands
-    ├── permissions/  # Permission system
-    └── ui/           # Terminal UI
+└── tsconfig.json
+
+# Empty folders for future expansion:
+src/
+├── providers/    # Multi-provider support
+├── mcp/          # MCP server support
+├── context/      # Context management
+├── session/      # Session persistence
+├── hooks/        # Pre/post hooks
+├── skills/       # Slash commands
+└── permissions/  # Permission system
 ```
 
 ## Environment Variables
